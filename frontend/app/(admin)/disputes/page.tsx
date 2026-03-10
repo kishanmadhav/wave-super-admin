@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
 import { AdminTopbar } from "@/components/layout/admin-topbar"
 import { Card, CardContent } from "@/components/ui/card"
@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { supabase } from "@/lib/supabase"
+import { api } from "@/lib/api"
 import { formatDateTime, truncate } from "@/lib/utils"
 import { Search, AlertTriangle, MoreHorizontal } from "lucide-react"
 import {
@@ -17,9 +17,15 @@ import {
 import { toast } from "sonner"
 
 interface Dispute {
-  id: string; type: string; target_type: string; target_name: string | null
-  severity: string; status: string; claimant_name: string | null
-  created_at: string; priority: number | null
+  id: string
+  type: string
+  target_type: string
+  target_name: string | null
+  severity: string
+  status: string
+  claimant_name: string | null
+  created_at: string
+  priority: number | null
 }
 
 const SEVERITY_BADGE: Record<string, string> = {
@@ -46,24 +52,26 @@ export default function DisputesPage() {
   const [statusFilter, setStatusFilter] = useState("active")
   const [total, setTotal] = useState(0)
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true)
-      let q = supabase
-        .from("disputes")
-        .select("id,type,target_type,target_name,severity,status,claimant_name,created_at,priority", { count: "exact" })
-        .order("created_at", { ascending: false })
-        .limit(50)
-      if (search) q = q.or(`target_name.ilike.%${search}%,claimant_name.ilike.%${search}%`)
-      if (statusFilter === "active") q = q.in("status", ["open", "under_review", "escalated", "awaiting_uploader_response", "awaiting_claimant_response"])
-      else if (statusFilter !== "all") q = q.eq("status", statusFilter)
-      const { data, count } = await q
-      setDisputes(data ?? [])
-      setTotal(count ?? 0)
-      setLoading(false)
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await api.get<{ data: Dispute[]; total: number }>("/disputes", {
+        status: statusFilter,
+        search: search || undefined,
+        limit: 50,
+        offset: 0,
+      })
+      setDisputes(res.data ?? [])
+      setTotal(res.total ?? 0)
+    } catch {
+      toast.error("Failed to load disputes")
+      setDisputes([])
+      setTotal(0)
     }
-    load()
+    setLoading(false)
   }, [search, statusFilter])
+
+  useEffect(() => { load() }, [load])
 
   return (
     <div>
@@ -142,9 +150,6 @@ export default function DisputesPage() {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem asChild><Link href={`/disputes/${d.id}`}>View Detail</Link></DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => toast.info("Assign — coming soon")}>Assign to me</DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => toast.info("Resolve — coming soon")}>Mark Resolved</DropdownMenuItem>
-                            <DropdownMenuItem className="text-destructive" onClick={() => toast.info("Escalate — coming soon")}>Escalate</DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </td>

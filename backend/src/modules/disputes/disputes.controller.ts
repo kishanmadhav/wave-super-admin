@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Param, Query, Body, Request, UseGuards } from '@nestjs/common';
+import { Controller, Get, Patch, Post, Param, Query, Body, Request, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { DisputesService } from './disputes.service';
 import { AdminAuthGuard } from '../auth/guards';
@@ -23,21 +23,32 @@ export class DisputesController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get full dispute detail' })
+  @ApiOperation({ summary: 'Get full dispute detail (evidence, timeline, messages, notes, parties)' })
   findById(@Param('id') id: string) {
     return this.disputesService.findById(id);
   }
 
+  @Post(':id/notes')
+  @ApiOperation({ summary: 'Add internal admin note' })
+  addNote(
+    @Param('id') id: string,
+    @Body() body: { note: string },
+    @Request() req: any,
+  ) {
+    return this.disputesService.addInternalNote(id, req.admin.id, body.note ?? '');
+  }
+
   @Patch(':id/status')
-  @ApiOperation({ summary: 'Update dispute status (resolve / escalate / close)' })
+  @ApiOperation({ summary: 'Update dispute status and optionally record ruling (in_favor_claimant, in_favor_content_owner, take_down, close)' })
   updateStatus(
     @Param('id') id: string,
-    @Body() body: { status: string; adminNotes?: string; resolution?: string },
+    @Body() body: { status: string; resolution?: string; internalNote?: string; ruling?: string },
     @Request() req: any,
   ) {
     return this.disputesService.updateStatus(id, body.status, req.admin.id, {
-      adminNotes: body.adminNotes,
       resolution: body.resolution,
+      internalNote: body.internalNote,
+      ruling: body.ruling,
     });
   }
 }
