@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { AdminTopbar } from "@/components/layout/admin-topbar"
@@ -41,7 +41,21 @@ import {
   Zap,
   Ban,
   Image as ImageIcon,
+  Play,
+  Pause,
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+  Info,
+  Pencil,
 } from "lucide-react"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
+import { Input } from "@/components/ui/input"
+import { getAudioStreamUrl } from "@/lib/storage"
 
 interface TrackRow {
   id: string
@@ -56,6 +70,48 @@ interface TrackRow {
   c_line: string | null
   lyrics: string | null
   duration_text: string | null
+  subtitle?: string | null
+  artists?: string | null
+  featured_artists?: string[] | null
+  producers?: string[] | null
+  composers?: string[] | null
+  lyricists?: string[] | null
+  publishers?: string[] | null
+  lyrics_translation?: string | null
+  primary_genre?: string | null
+  sub_genre?: string | null
+  year_of_recording?: string | null
+  year_of_release?: string | null
+  mood_tags?: string[] | null
+  tempo?: string | null
+  musical_key?: string | null
+  theme_tags?: string[] | null
+  cultural_tag?: string | null
+  track_rights_type?: string | null
+  original_artist?: string | null
+  sample_owner?: string | null
+  contributors?: Contributor[]
+  [key: string]: unknown
+}
+
+interface SplitRecipient {
+  id: string
+  release_id: string
+  name: string
+  identifier: string | null
+  role: string
+  share_percent: number
+  created_at: string
+}
+
+interface Contributor {
+  id: string
+  track_id: string
+  name: string
+  role: string
+  publisher: string | null
+  share_percent: number
+  created_at: string
 }
 
 interface ReleaseDetail {
@@ -80,6 +136,20 @@ interface ReleaseDetail {
   created_at: string
   updated_at: string
   tracks: TrackRow[]
+  split_recipients?: SplitRecipient[]
+  description?: string | null
+  territory?: string | null
+  upc?: string | null
+  catalog_number?: string | null
+  license_type?: string | null
+  license_owner?: string | null
+  license_territory?: string | null
+  license_start?: string | null
+  license_end?: string | null
+  confirm_splits?: boolean
+  confirm_terms?: boolean
+  explicit_content?: string | null
+  [key: string]: unknown
 }
 
 const statusColors: Record<string, string> = {
@@ -105,6 +175,256 @@ function formatStatus(s: string) {
 
 type ActionType = "approve" | "request_changes" | "reject" | "force_publish" | "takedown"
 
+function formatTime(s: number) {
+  if (!Number.isFinite(s) || s < 0) return "0:00"
+  return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`
+}
+
+/** Keys to exclude from additional info: URLs and nested/relation data we show separately */
+function isUrlOrExcludedKey(key: string, context: "release" | "track"): boolean {
+  const lower = key.toLowerCase()
+  if (lower.includes("url") || lower.endsWith("_url")) return true
+  if (context === "release" && (key === "tracks" || key === "split_recipients")) return true
+  if (context === "track" && key === "contributors") return true
+  return false
+}
+
+function formatAdditionalValue(value: unknown): string {
+  if (value == null) return "—"
+  if (Array.isArray(value)) return value.join(", ")
+  if (typeof value === "object") return JSON.stringify(value)
+  return String(value)
+}
+
+function fileFormat(fileName: string | null, fileUrl: string | null): string {
+  const name = fileName ?? fileUrl ?? ""
+  const ext = name.split("?")[0].split(".").pop()?.toUpperCase()
+  return ext && ext.length <= 5 ? ext : "—"
+}
+
+function ReleaseEditForm({
+  release,
+  onSave,
+  onCancel,
+  saving,
+}: {
+  release: ReleaseDetail
+  onSave: (patch: Record<string, unknown>) => void
+  onCancel: () => void
+  saving: boolean
+}) {
+  const [title, setTitle] = useState(release.title)
+  const [primary_artist, setPrimaryArtist] = useState(release.primary_artist)
+  const [label, setLabel] = useState(release.label ?? "")
+  const [primary_genre, setPrimaryGenre] = useState(release.primary_genre ?? "")
+  const [primary_language, setPrimaryLanguage] = useState(release.primary_language ?? "")
+  const [release_date, setReleaseDate] = useState(release.release_date ?? "")
+  const [description, setDescription] = useState((release as Record<string, unknown>).description ?? "")
+  const [reviewer_comment, setReviewerComment] = useState(release.reviewer_comment ?? "")
+  const [territory, setTerritory] = useState((release as Record<string, unknown>).territory ?? "")
+  const [upc, setUpc] = useState((release as Record<string, unknown>).upc ?? "")
+  const [rights_type, setRightsType] = useState(release.rights_type ?? "")
+  const [license_type, setLicenseType] = useState((release as Record<string, unknown>).license_type ?? "")
+  const [license_owner, setLicenseOwner] = useState((release as Record<string, unknown>).license_owner ?? "")
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    onSave({
+      title,
+      primary_artist,
+      label: label || undefined,
+      primary_genre: primary_genre || undefined,
+      primary_language: primary_language || undefined,
+      release_date: release_date || undefined,
+      description: description || undefined,
+      reviewer_comment: reviewer_comment || undefined,
+      territory: territory || undefined,
+      upc: upc || undefined,
+      rights_type: rights_type || undefined,
+      license_type: license_type || undefined,
+      license_owner: license_owner || undefined,
+    })
+  }
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-wrap items-center gap-2">
+      <Button type="submit" size="sm" disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full mt-3">
+        <div><Label className="text-xs">Title</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} className="h-8 mt-0.5" /></div>
+        <div><Label className="text-xs">Primary artist</Label><Input value={primary_artist} onChange={(e) => setPrimaryArtist(e.target.value)} className="h-8 mt-0.5" /></div>
+        <div><Label className="text-xs">Label</Label><Input value={label} onChange={(e) => setLabel(e.target.value)} className="h-8 mt-0.5" /></div>
+        <div><Label className="text-xs">Genre</Label><Input value={primary_genre} onChange={(e) => setPrimaryGenre(e.target.value)} className="h-8 mt-0.5" /></div>
+        <div><Label className="text-xs">Language</Label><Input value={primary_language} onChange={(e) => setPrimaryLanguage(e.target.value)} className="h-8 mt-0.5" /></div>
+        <div><Label className="text-xs">Release date</Label><Input type="date" value={release_date} onChange={(e) => setReleaseDate(e.target.value)} className="h-8 mt-0.5" /></div>
+        <div className="sm:col-span-2"><Label className="text-xs">Description</Label><Textarea value={description} onChange={(e) => setDescription(e.target.value)} className="min-h-16 mt-0.5" /></div>
+        <div className="sm:col-span-2"><Label className="text-xs">Reviewer comment</Label><Textarea value={reviewer_comment} onChange={(e) => setReviewerComment(e.target.value)} className="min-h-16 mt-0.5" /></div>
+        <div><Label className="text-xs">Territory</Label><Input value={territory} onChange={(e) => setTerritory(e.target.value)} className="h-8 mt-0.5" /></div>
+        <div><Label className="text-xs">UPC</Label><Input value={upc} onChange={(e) => setUpc(e.target.value)} className="h-8 mt-0.5" /></div>
+        <div><Label className="text-xs">Rights type</Label><Input value={rights_type} onChange={(e) => setRightsType(e.target.value)} className="h-8 mt-0.5" /></div>
+        <div><Label className="text-xs">License type</Label><Input value={license_type} onChange={(e) => setLicenseType(e.target.value)} className="h-8 mt-0.5" /></div>
+        <div><Label className="text-xs">License owner</Label><Input value={license_owner} onChange={(e) => setLicenseOwner(e.target.value)} className="h-8 mt-0.5" /></div>
+      </div>
+    </form>
+  )
+}
+
+function TrackEditForm({
+  track,
+  onSave,
+  onCancel,
+  saving,
+}: {
+  track: TrackRow
+  onSave: (patch: Record<string, unknown>) => void
+  onCancel: () => void
+  saving: boolean
+}) {
+  const [title, setTitle] = useState(track.title)
+  const [primary_artist, setPrimaryArtist] = useState(track.primary_artist ?? "")
+  const [isrc, setIsrc] = useState(track.isrc ?? "")
+  const [p_line, setPLine] = useState(track.p_line ?? "")
+  const [c_line, setCLine] = useState(track.c_line ?? "")
+  const [lyrics, setLyrics] = useState(track.lyrics ?? "")
+  const [lyrics_translation, setLyricsTranslation] = useState(track.lyrics_translation ?? "")
+  const [subtitle, setSubtitle] = useState(track.subtitle ?? "")
+  const [primary_genre, setPrimaryGenre] = useState(track.primary_genre ?? "")
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    onSave({
+      title,
+      primary_artist: primary_artist || undefined,
+      isrc: isrc || undefined,
+      p_line: p_line || undefined,
+      c_line: c_line || undefined,
+      lyrics: lyrics || undefined,
+      lyrics_translation: lyrics_translation || undefined,
+      subtitle: subtitle || undefined,
+      primary_genre: primary_genre || undefined,
+    })
+  }
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-wrap items-center gap-2">
+      <Button type="submit" size="sm" disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full mt-3">
+        <div><Label className="text-xs">Title</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} className="h-8 mt-0.5" /></div>
+        <div><Label className="text-xs">Primary artist</Label><Input value={primary_artist} onChange={(e) => setPrimaryArtist(e.target.value)} className="h-8 mt-0.5" /></div>
+        <div><Label className="text-xs">Subtitle</Label><Input value={subtitle} onChange={(e) => setSubtitle(e.target.value)} className="h-8 mt-0.5" /></div>
+        <div><Label className="text-xs">ISRC</Label><Input value={isrc} onChange={(e) => setIsrc(e.target.value)} className="h-8 mt-0.5" /></div>
+        <div><Label className="text-xs">P-Line</Label><Input value={p_line} onChange={(e) => setPLine(e.target.value)} className="h-8 mt-0.5" /></div>
+        <div><Label className="text-xs">C-Line</Label><Input value={c_line} onChange={(e) => setCLine(e.target.value)} className="h-8 mt-0.5" /></div>
+        <div><Label className="text-xs">Genre</Label><Input value={primary_genre} onChange={(e) => setPrimaryGenre(e.target.value)} className="h-8 mt-0.5" /></div>
+        <div className="sm:col-span-2"><Label className="text-xs">Lyrics</Label><Textarea value={lyrics} onChange={(e) => setLyrics(e.target.value)} className="min-h-32 font-sans text-sm whitespace-pre-wrap mt-0.5" placeholder="Lyrics (plain text)" /></div>
+        <div className="sm:col-span-2"><Label className="text-xs">Lyrics translation</Label><Textarea value={lyrics_translation} onChange={(e) => setLyricsTranslation(e.target.value)} className="min-h-24 font-sans text-sm whitespace-pre-wrap mt-0.5" placeholder="Translation" /></div>
+      </div>
+    </form>
+  )
+}
+
+const urlCache = new Map<string, { url: string; exp: number }>()
+async function getUrl(fileUrl: string): Promise<string> {
+  const cached = urlCache.get(fileUrl)
+  if (cached && cached.exp > Date.now()) return cached.url
+  const url = await getAudioStreamUrl(fileUrl, 3600)
+  urlCache.set(fileUrl, { url, exp: Date.now() + 55 * 60 * 1000 })
+  return url
+}
+
+function TrackPlayer({ fileUrl, fileName, duration }: { fileUrl: string; fileName: string | null; duration: string | null }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const [playing, setPlaying] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [current, setCurrent] = useState(0)
+  const [total, setTotal] = useState(0)
+  const [err, setErr] = useState<string | null>(null)
+  const [dragging, setDragging] = useState(false)
+
+  useEffect(() => () => { audioRef.current?.pause(); audioRef.current = null }, [])
+
+  const toggle = useCallback(async () => {
+    setErr(null)
+    try {
+      if (!audioRef.current) {
+        setLoading(true)
+        let src: string
+        try {
+          src = await getUrl(fileUrl)
+        } catch (e: any) {
+          setErr(e?.message ?? "Cannot load audio")
+          setLoading(false)
+          return
+        }
+        const audio = new Audio(src)
+        audio.preload = "auto"
+        audio.onloadedmetadata = () => { setTotal(audio.duration); setLoading(false) }
+        audio.ontimeupdate = () => { if (!dragging) setCurrent(audio.currentTime) }
+        audio.onended = () => { setPlaying(false); setCurrent(0) }
+        audio.onerror = () => { setErr("Playback failed"); setPlaying(false); setLoading(false) }
+        audioRef.current = audio
+        await audio.play()
+        setPlaying(true)
+        return
+      }
+      if (playing) { audioRef.current.pause(); setPlaying(false) }
+      else { await audioRef.current.play(); setPlaying(true) }
+    } catch {
+      setErr("Playback failed")
+      setLoading(false)
+    }
+  }, [fileUrl, playing, dragging])
+
+  const seek = useCallback((value: number) => {
+    setCurrent(value)
+    if (audioRef.current) audioRef.current.currentTime = value
+  }, [])
+
+  const displayTotal = total > 0 ? formatTime(total) : duration ?? "—"
+  const progress = total > 0 ? (current / total) * 100 : 0
+
+  return (
+    <div className="flex flex-col gap-1 min-w-0 w-44">
+      <div className="flex items-center gap-2">
+        <Button
+          size="icon"
+          variant="outline"
+          className="size-7 shrink-0"
+          onClick={toggle}
+          disabled={loading}
+          aria-label={playing ? "Pause" : "Play"}
+        >
+          {loading ? <Loader2 className="size-3 animate-spin" /> : playing ? <Pause className="size-3" /> : <Play className="size-3" />}
+        </Button>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-xs tabular-nums text-muted-foreground whitespace-nowrap">
+            {formatTime(current)}<span className="text-muted-foreground/50"> / </span>{displayTotal}
+          </span>
+          <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 shrink-0">
+            {fileFormat(fileName, fileUrl)}
+          </Badge>
+        </div>
+      </div>
+      <div className={total === 0 ? "relative w-full h-4 flex items-center opacity-40" : "relative w-full h-4 flex items-center"}>
+        <div className="absolute inset-x-0 h-[3px] rounded-full bg-muted" />
+        <div className="absolute left-0 h-[3px] rounded-full bg-primary pointer-events-none" style={{ width: `${progress}%` }} />
+        <div className="absolute w-3 h-3 rounded-full bg-primary pointer-events-none shadow-sm -translate-x-1/2" style={{ left: `${progress}%` }} />
+        <input
+          type="range"
+          min={0}
+          max={total > 0 ? total : 100}
+          step={0.1}
+          value={current}
+          onMouseDown={() => setDragging(true)}
+          onTouchStart={() => setDragging(true)}
+          onChange={(e) => setCurrent(Number(e.target.value))}
+          onMouseUp={(e) => { setDragging(false); seek(Number((e.target as HTMLInputElement).value)) }}
+          onTouchEnd={(e) => { setDragging(false); seek(Number((e.target as HTMLInputElement).value)) }}
+          disabled={total === 0}
+          aria-label="Seek"
+          className="absolute inset-0 w-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+        />
+      </div>
+      {err && <span className="text-[10px] text-destructive">{err}</span>}
+    </div>
+  )
+}
+
 export default function CatalogReleaseDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
@@ -113,6 +433,15 @@ export default function CatalogReleaseDetailPage() {
   const [actionType, setActionType] = useState<ActionType | null>(null)
   const [comment, setComment] = useState("")
   const [submitting, setSubmitting] = useState(false)
+  const [showAdditionalInfo, setShowAdditionalInfo] = useState(false)
+  const [editingRelease, setEditingRelease] = useState(false)
+  const [editingTrackId, setEditingTrackId] = useState<string | null>(null)
+  const [savingEdit, setSavingEdit] = useState(false)
+
+  const refetch = useCallback(() => {
+    if (!id) return
+    api.get<ReleaseDetail>(`/catalog/releases/${id}`).then(setRelease).catch(() => setRelease(null))
+  }, [id])
 
   useEffect(() => {
     if (!id) return
@@ -169,6 +498,36 @@ export default function CatalogReleaseDetailPage() {
       toast.error(e.message ?? "Action failed")
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function saveReleaseEdit(patch: Record<string, unknown>) {
+    if (!id) return
+    setSavingEdit(true)
+    try {
+      await api.patch(`/catalog/releases/${id}`, patch)
+      toast.success("Release updated")
+      setEditingRelease(false)
+      refetch()
+    } catch (e: any) {
+      toast.error(e.message ?? "Update failed")
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  async function saveTrackEdit(trackId: string, patch: Record<string, unknown>) {
+    if (!id) return
+    setSavingEdit(true)
+    try {
+      await api.patch(`/catalog/releases/${id}/tracks/${trackId}`, patch)
+      toast.success("Track updated")
+      setEditingTrackId(null)
+      refetch()
+    } catch (e: any) {
+      toast.error(e.message ?? "Update failed")
+    } finally {
+      setSavingEdit(false)
     }
   }
 
@@ -358,9 +717,11 @@ export default function CatalogReleaseDetailPage() {
                         <p className="text-xs text-muted-foreground">{track.primary_artist ?? release.primary_artist}</p>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={track.file_url ? "secondary" : "destructive"} className="text-[10px] capitalize">
-                          {track.upload_status}
-                        </Badge>
+                        {track.file_url ? (
+                          <TrackPlayer fileUrl={track.file_url} fileName={track.file_name} duration={track.duration_text} />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">No file linked</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-xs font-mono text-muted-foreground">{track.isrc ?? "—"}</TableCell>
                       <TableCell>
@@ -384,6 +745,186 @@ export default function CatalogReleaseDetailPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Lyrics — clear display when present */}
+        {tracks.some((t) => t.lyrics?.trim()) && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <FileText className="size-4 text-primary" />
+                Lyrics
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {tracks.map((track) =>
+                track.lyrics?.trim() ? (
+                  <div key={track.id} className="space-y-2">
+                    <p className="text-sm font-medium text-foreground">{track.title}</p>
+                    <pre className="whitespace-pre-wrap text-sm text-foreground bg-muted/50 rounded-lg p-4 max-h-80 overflow-y-auto border border-border font-sans leading-relaxed">
+                      {track.lyrics}
+                    </pre>
+                    {track.lyrics_translation?.trim() && (
+                      <>
+                        <p className="text-xs text-muted-foreground mt-2">Translation</p>
+                        <pre className="whitespace-pre-wrap text-sm text-muted-foreground bg-muted/30 rounded-lg p-4 max-h-60 overflow-y-auto border border-border font-sans leading-relaxed">
+                          {track.lyrics_translation}
+                        </pre>
+                      </>
+                    )}
+                  </div>
+                ) : null
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Show additional information — all release/track data + edit */}
+        <Collapsible open={showAdditionalInfo} onOpenChange={setShowAdditionalInfo}>
+          <Card>
+            <CollapsibleTrigger asChild>
+              <button type="button" className="w-full text-left">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Info className="size-4 text-primary" />
+                      Show additional information
+                    </CardTitle>
+                    {showAdditionalInfo ? (
+                      <ChevronUp className="size-4 text-muted-foreground" />
+                    ) : (
+                      <ChevronDown className="size-4 text-muted-foreground" />
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    All data provided by the artist in the release wizard (metadata, credits, rights, lyrics). You can edit and save.
+                  </p>
+                </CardHeader>
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent className="pt-0 space-y-6 border-t border-border">
+                {/* Release: all fields + Edit */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-semibold">Release — all fields</h4>
+                    {!editingRelease ? (
+                      <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setEditingRelease(true)}>
+                        <Pencil className="size-3.5" /> Edit release
+                      </Button>
+                    ) : (
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="ghost" onClick={() => setEditingRelease(false)}>Cancel</Button>
+                        <ReleaseEditForm release={release} onSave={saveReleaseEdit} onCancel={() => setEditingRelease(false)} saving={savingEdit} />
+                      </div>
+                    )}
+                  </div>
+                  {!editingRelease && (
+                    <>
+                      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                        {Object.entries(release)
+                          .filter(([k]) => !["tracks", "id", "profile_id", "artist_id"].includes(k) && !isUrlOrExcludedKey(k, "release"))
+                          .map(([key, value]) => (
+                            <div key={key} className="flex gap-2">
+                              <dt className="text-muted-foreground capitalize min-w-[140px]">{key.replace(/_/g, " ")}</dt>
+                              <dd className="break-words">{formatAdditionalValue(value)}</dd>
+                            </div>
+                          ))}
+                      </dl>
+                      {/* Revenue splits from DB (split_recipients by release_id) */}
+                      {release.split_recipients && release.split_recipients.length > 0 && (
+                        <div className="mt-4 pt-4 border-t border-border">
+                          <h5 className="text-sm font-semibold text-foreground mb-2">Revenue splits</h5>
+                          <div className="rounded border border-border overflow-hidden">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="bg-muted/50 border-b border-border">
+                                  <th className="text-left p-2 font-medium">Name</th>
+                                  <th className="text-left p-2 font-medium">Role</th>
+                                  <th className="text-left p-2 font-medium">Identifier</th>
+                                  <th className="text-right p-2 font-medium">Share %</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {release.split_recipients.map((s: SplitRecipient) => (
+                                  <tr key={s.id} className="border-b border-border last:border-0">
+                                    <td className="p-2">{s.name}</td>
+                                    <td className="p-2 capitalize">{s.role}</td>
+                                    <td className="p-2 text-muted-foreground">{s.identifier ?? "—"}</td>
+                                    <td className="p-2 text-right">{s.share_percent}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+                {/* Tracks: all fields from DB + contributor splits + Edit per track */}
+                {tracks.map((track) => (
+                  <div key={track.id} className="space-y-3 rounded-lg border border-border p-4 bg-muted/20">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold">Track: {track.title}</h4>
+                      {editingTrackId !== track.id ? (
+                        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setEditingTrackId(track.id)}>
+                          <Pencil className="size-3.5" /> Edit track
+                        </Button>
+                      ) : (
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="ghost" onClick={() => setEditingTrackId(null)}>Cancel</Button>
+                          <TrackEditForm track={track} onSave={(patch) => saveTrackEdit(track.id, patch)} onCancel={() => setEditingTrackId(null)} saving={savingEdit} />
+                        </div>
+                      )}
+                    </div>
+                    {editingTrackId !== track.id && (
+                      <>
+                        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                          {Object.entries(track)
+                            .filter(([k]) => k !== "id" && k !== "release_id" && !isUrlOrExcludedKey(k, "track"))
+                            .map(([key, value]) => (
+                              <div key={key} className="flex gap-2">
+                                <dt className="text-muted-foreground capitalize min-w-[140px]">{key.replace(/_/g, " ")}</dt>
+                                <dd className="break-words">{formatAdditionalValue(value)}</dd>
+                              </div>
+                            ))}
+                        </dl>
+                        {/* Contributor splits from DB (contributors by track_id) */}
+                        {track.contributors && track.contributors.length > 0 && (
+                          <div className="mt-4 pt-4 border-t border-border">
+                            <h5 className="text-sm font-semibold text-foreground mb-2">Contributor splits</h5>
+                            <div className="rounded border border-border overflow-hidden">
+                              <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="bg-muted/50 border-b border-border">
+                                    <th className="text-left p-2 font-medium">Name</th>
+                                    <th className="text-left p-2 font-medium">Role</th>
+                                    <th className="text-left p-2 font-medium">Publisher</th>
+                                    <th className="text-right p-2 font-medium">Share %</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {track.contributors.map((c: Contributor) => (
+                                    <tr key={c.id} className="border-b border-border last:border-0">
+                                      <td className="p-2">{c.name}</td>
+                                      <td className="p-2 capitalize">{c.role}</td>
+                                      <td className="p-2 text-muted-foreground">{c.publisher ?? "—"}</td>
+                                      <td className="p-2 text-right">{c.share_percent}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                ))}
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
 
         <div className="grid md:grid-cols-2 gap-6">
           {/* Metadata review */}

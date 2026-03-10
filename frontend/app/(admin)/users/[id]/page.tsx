@@ -14,7 +14,7 @@ import { api } from "@/lib/api"
 import { formatDateTime, initials } from "@/lib/utils"
 import {
   ArrowLeft, Mail, Globe, Calendar, ShieldCheck, UserX, Flag,
-  Wallet, MessageSquare, ScrollText, AlertTriangle, Copy, ExternalLink,
+  Wallet, ScrollText, AlertTriangle, Copy,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -170,9 +170,6 @@ export default function UserDetailPage() {
 
               {/* Actions */}
               <div className="flex items-center gap-2 flex-wrap">
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => toast.info("Impersonate — coming soon")}>
-                  <ExternalLink className="size-3.5" /> Impersonate
-                </Button>
                 {profile.suspended_at ? (
                   <Button variant="outline" size="sm" className="gap-1.5 text-warning border-warning/40 hover:bg-warning/10" onClick={unsuspend}>
                     <UserX className="size-3.5" /> Re-enable
@@ -187,9 +184,6 @@ export default function UserDetailPage() {
                 </Button>
                 <Button variant="outline" size="sm" className="gap-1.5 text-destructive border-destructive/40 hover:bg-destructive/10" onClick={ban}>
                   <ShieldCheck className="size-3.5" /> Ban
-                </Button>
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => toast.info("Message — coming soon")}>
-                  <MessageSquare className="size-3.5" /> Message
                 </Button>
               </div>
             </div>

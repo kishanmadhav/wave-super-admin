@@ -27,6 +27,27 @@ export class CatalogController {
     return this.catalogService.findRelease(id);
   }
 
+  @Patch('releases/:id')
+  @ApiOperation({ summary: 'Update release fields (admin edit)' })
+  updateRelease(
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+    @Request() req: any,
+  ) {
+    return this.catalogService.updateRelease(id, body, req.admin.id);
+  }
+
+  @Patch('releases/:releaseId/tracks/:trackId')
+  @ApiOperation({ summary: 'Update track fields (admin edit)' })
+  updateTrack(
+    @Param('releaseId') _releaseId: string,
+    @Param('trackId') trackId: string,
+    @Body() body: Record<string, unknown>,
+    @Request() req: any,
+  ) {
+    return this.catalogService.updateTrack(trackId, body, req.admin.id);
+  }
+
   @Patch('releases/:id/status')
   @ApiOperation({ summary: 'Update release status' })
   updateReleaseStatus(

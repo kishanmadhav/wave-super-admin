@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { formatDateTime, initials, truncate } from "@/lib/utils"
-import { Search, Download, ShieldCheck, ShieldOff, MoreHorizontal, UserX, Plus } from "lucide-react"
+import { Search, Download, ShieldCheck, ShieldOff, MoreHorizontal, UserX, Plus, BadgeCheck } from "lucide-react"
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
@@ -204,6 +204,39 @@ export default function CreatorsPage() {
     }
   }
 
+  function escapeCsvCell(value: string | null | undefined): string {
+    if (value == null) return ""
+    const s = String(value)
+    if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+    return s
+  }
+
+  function exportCreatorsCsv() {
+    const headers = ["Display Name", "Email", "Username", "Org Name", "Account Type", "Country", "Status", "Joined"]
+    const rows = creators.map((p) => {
+      const status = creatorStatus(p)
+      return [
+        escapeCsvCell(p.display_name),
+        escapeCsvCell(p.email),
+        escapeCsvCell(p.username),
+        escapeCsvCell(p.org_name),
+        escapeCsvCell(p.account_type ?? ""),
+        escapeCsvCell(p.country),
+        escapeCsvCell(status),
+        escapeCsvCell(p.created_at ? formatDateTime(p.created_at) : ""),
+      ]
+    })
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\r\n")
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `creators-export-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast.success(`Exported ${creators.length} creators as CSV`)
+  }
+
   return (
     <div>
       <AdminTopbar title="Creators" subtitle={`${total} creator accounts`} />
@@ -280,7 +313,7 @@ export default function CreatorsPage() {
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
-                <Button variant="outline" size="sm" className="gap-1.5">
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={exportCreatorsCsv} disabled={loading}>
                   <Download className="size-3.5" /> Export
                 </Button>
               </div>
@@ -431,10 +464,15 @@ export default function CreatorsPage() {
                               <AvatarFallback className="bg-primary/10 text-primary text-xs">{initials(a.name)}</AvatarFallback>
                             </Avatar>
                             <div>
-                              <span className="font-medium">{truncate(a.name, 28)}</span>
+                              <span className="font-medium inline-flex items-center gap-1.5">
+                                {truncate(a.name, 28)}
+                                {a.verification_status === "verified" && (
+                                  <BadgeCheck className="size-4 shrink-0 text-blue-500" aria-label="Verified" />
+                                )}
+                              </span>
                               <div className="mt-0.5 flex gap-1.5">
                                 {a.verification_status === "verified" ? (
-                                  <Badge variant="secondary" className="text-[10px]">Verified</Badge>
+                                  <Badge variant="secondary" className="text-[10px] text-blue-600 border-blue-500/30">Verified</Badge>
                                 ) : (
                                   <Badge variant="outline" className="text-[10px] capitalize">{a.verification_status ?? "unverified"}</Badge>
                                 )}
@@ -519,7 +557,14 @@ export default function CreatorsPage() {
                       </TableRow>
                     ) : labels.map(l => (
                       <TableRow key={l.id}>
-                        <TableCell className="font-medium">{l.label_name ?? "—"}</TableCell>
+                        <TableCell className="font-medium">
+                          <span className="inline-flex items-center gap-1.5">
+                            {l.label_name ?? "—"}
+                            {l.verification_status === "verified" && (
+                              <BadgeCheck className="size-4 shrink-0 text-blue-500" aria-label="Verified" />
+                            )}
+                          </span>
+                        </TableCell>
                         <TableCell className="text-muted-foreground text-xs">{l.legal_entity_name ?? "—"}</TableCell>
                         <TableCell className="text-muted-foreground text-xs">{l.registered_country ?? "—"}</TableCell>
                         <TableCell>
