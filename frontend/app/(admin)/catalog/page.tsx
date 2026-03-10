@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
+import Link from "next/link"
 import { AdminTopbar } from "@/components/layout/admin-topbar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -8,85 +9,132 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { supabase } from "@/lib/supabase"
-import { formatDate, truncate } from "@/lib/utils"
-import { Search, Download, Radio, MoreHorizontal } from "lucide-react"
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table"
+import { api } from "@/lib/api"
+import { formatDate, truncate } from "@/lib/utils"
+import { Search, Download, MoreHorizontal, ChevronRight, Disc3 } from "lucide-react"
 import { toast } from "sonner"
 
 const STATUS_BADGE: Record<string, string> = {
-  draft:              "bg-secondary text-secondary-foreground",
-  submitted:          "bg-primary/15 text-primary",
-  under_review:       "bg-primary/15 text-primary",
-  approved:           "bg-success/15 text-success",
-  published:          "bg-success/15 text-success",
-  changes_requested:  "bg-warning/15 text-warning",
-  rejected:           "bg-destructive/15 text-destructive",
-  takedown:           "bg-destructive/15 text-destructive",
+  draft: "bg-muted text-muted-foreground",
+  submitted: "bg-primary/15 text-primary",
+  under_review: "bg-primary/15 text-primary",
+  approved: "bg-success/15 text-success",
+  published: "bg-success/15 text-success",
+  changes_requested: "bg-warning/15 text-warning",
+  rejected: "bg-destructive/15 text-destructive",
+  takedown: "bg-destructive/15 text-destructive",
 }
 
 interface Release {
-  id: string; title: string; primary_artist: string; status: string
-  type: string; release_date: string | null; created_at: string
+  id: string
+  title: string
+  primary_artist: string
+  status: string
+  type: string
+  release_date: string | null
+  created_at: string
   metadata_completeness_score: number | null
 }
-interface Track {
-  id: string; title: string; isrc: string | null; upload_status: string
-  created_at: string; releases: { title: string } | null
+
+interface Paged<T> {
+  data: T[]
+  total: number
 }
+
+const PENDING_STATUSES = ["draft", "submitted", "under_review"]
+const CHANGES_STATUSES = ["changes_requested"]
+const APPROVED_STATUSES = ["approved", "published"]
+const REJECTED_STATUSES = ["rejected", "takedown"]
 
 export default function CatalogPage() {
   const [releases, setReleases] = useState<Release[]>([])
-  const [tracks, setTracks]   = useState<Track[]>([])
-  const [search, setSearch]   = useState("")
+  const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [loading, setLoading] = useState(true)
-  const [totalReleases, setTotalReleases] = useState(0)
-  const [totalTracks, setTotalTracks]   = useState(0)
+  const [total, setTotal] = useState(0)
+  const [queueTab, setQueueTab] = useState("pending")
 
   const loadReleases = useCallback(async () => {
     setLoading(true)
-    let q = supabase
-      .from("releases")
-      .select("id,title,primary_artist,status,type,release_date,created_at,metadata_completeness_score", { count: "exact" })
-      .order("created_at", { ascending: false })
-      .limit(50)
-    if (search) q = q.ilike("title", `%${search}%`)
-    if (statusFilter !== "all") q = q.eq("status", statusFilter)
-    const { data, count } = await q
-    setReleases(data ?? [])
-    setTotalReleases(count ?? 0)
+    try {
+      const res = await api.get<Paged<Release>>("/catalog/releases", {
+        search: search || undefined,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+        limit: 100,
+        offset: 0,
+      })
+      setReleases(res.data ?? [])
+      setTotal(res.total ?? 0)
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to load releases")
+      setReleases([])
+      setTotal(0)
+    }
     setLoading(false)
   }, [search, statusFilter])
 
-  const loadTracks = useCallback(async () => {
-    let q = supabase
-      .from("tracks")
-      .select("id,title,isrc,upload_status,created_at,releases(title)", { count: "exact" })
-      .order("created_at", { ascending: false })
-      .limit(50)
-    if (search) q = q.ilike("title", `%${search}%`)
-    const { data, count } = await q
-    setTracks((data ?? []) as Track[])
-    setTotalTracks(count ?? 0)
-  }, [search])
-
   useEffect(() => {
     loadReleases()
-    loadTracks()
-  }, [loadReleases, loadTracks])
+  }, [loadReleases])
+
+  const pending = releases.filter((r) => PENDING_STATUSES.includes(r.status))
+  const changesReq = releases.filter((r) => CHANGES_STATUSES.includes(r.status))
+  const approved = releases.filter((r) => APPROVED_STATUSES.includes(r.status))
+  const rejected = releases.filter((r) => REJECTED_STATUSES.includes(r.status))
+
+  const tabItems: Record<string, Release[]> = {
+    pending,
+    changes_requested: changesReq,
+    approved,
+    rejected,
+  }
+  const currentReleases = tabItems[queueTab] ?? pending
 
   return (
     <div>
-      <AdminTopbar title="Catalog" subtitle="Releases, Tracks & Assets" />
+      <AdminTopbar title="Catalog" subtitle="Release verification queue" />
       <div className="p-6 max-w-[1400px] space-y-4">
+        {/* Summary cards */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          {[
+            { label: "Pending", count: pending.length, tab: "pending" },
+            { label: "Changes requested", count: changesReq.length, tab: "changes_requested" },
+            { label: "Approved / Published", count: approved.length, tab: "approved" },
+            { label: "Rejected / Takedown", count: rejected.length, tab: "rejected" },
+            { label: "Total", count: total, tab: null },
+          ].map((s) => (
+            <Card key={s.label} className="bg-card border-border">
+              <CardContent className="p-4">
+                <p className="text-xs text-muted-foreground">{s.label}</p>
+                <p className="text-2xl font-bold mt-1 text-foreground">{s.count}</p>
+                {s.tab && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-2 h-7 text-xs"
+                    onClick={() => setQueueTab(s.tab!)}
+                  >
+                    View
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-[200px] max-w-xs">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-            <Input placeholder="Search by title…" className="pl-8 h-8 text-sm" value={search} onChange={e => setSearch(e.target.value)} />
+            <Input
+              placeholder="Search by title or artist…"
+              className="pl-8 h-8 text-sm"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
           </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-40 h-8 text-sm">
@@ -99,119 +147,105 @@ export default function CatalogPage() {
               <SelectItem value="under_review">Under Review</SelectItem>
               <SelectItem value="approved">Approved</SelectItem>
               <SelectItem value="published">Published</SelectItem>
-              <SelectItem value="changes_requested">Changes Requested</SelectItem>
+              <SelectItem value="changes_requested">Changes requested</SelectItem>
               <SelectItem value="rejected">Rejected</SelectItem>
               <SelectItem value="takedown">Takedown</SelectItem>
             </SelectContent>
           </Select>
           <div className="ml-auto flex gap-2">
-            <Button variant="outline" size="sm" className="gap-1.5"><Download className="size-3.5" />Export</Button>
+            <Button variant="outline" size="sm" className="gap-1.5">
+              <Download className="size-3.5" /> Export
+            </Button>
           </div>
         </div>
 
-        <Tabs defaultValue="releases">
-          <TabsList>
-            <TabsTrigger value="releases">Releases ({totalReleases})</TabsTrigger>
-            <TabsTrigger value="tracks">Tracks ({totalTracks})</TabsTrigger>
+        {/* Queue tabs */}
+        <Tabs value={queueTab} onValueChange={setQueueTab}>
+          <TabsList className="bg-muted/50">
+            <TabsTrigger value="pending">Pending ({pending.length})</TabsTrigger>
+            <TabsTrigger value="changes_requested">Changes requested ({changesReq.length})</TabsTrigger>
+            <TabsTrigger value="approved">Approved / Published ({approved.length})</TabsTrigger>
+            <TabsTrigger value="rejected">Rejected / Takedown ({rejected.length})</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="releases" className="mt-4">
+          <TabsContent value={queueTab} className="mt-4">
             <Card>
               <CardContent className="p-0">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-border bg-secondary/30">
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Release</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Artist</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Type</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Status</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Score</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Release Date</th>
-                        <th className="px-4 py-3 w-10"></th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {loading ? Array.from({ length: 8 }).map((_, i) => (
-                        <tr key={i}>{Array.from({ length: 7 }).map((_, j) => (
-                          <td key={j} className="px-4 py-3"><div className="h-4 rounded bg-secondary animate-pulse" /></td>
-                        ))}</tr>
-                      )) : releases.length === 0 ? (
-                        <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground text-sm">No releases found</td></tr>
-                      ) : releases.map(r => (
-                        <tr key={r.id} className="hover:bg-secondary/20">
-                          <td className="px-4 py-3 font-medium text-foreground">{truncate(r.title, 30)}</td>
-                          <td className="px-4 py-3 text-muted-foreground text-xs">{truncate(r.primary_artist, 24)}</td>
-                          <td className="px-4 py-3">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50 hover:bg-muted/50">
+                      <TableHead className="w-8"></TableHead>
+                      <TableHead>Release</TableHead>
+                      <TableHead>Artist</TableHead>
+                      <TableHead className="w-24">Type</TableHead>
+                      <TableHead className="w-28">Status</TableHead>
+                      <TableHead className="w-20">Score</TableHead>
+                      <TableHead className="w-28">Release date</TableHead>
+                      <TableHead className="w-24"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {loading ? (
+                      Array.from({ length: 8 }).map((_, i) => (
+                        <TableRow key={i}>
+                          <TableCell><div className="h-4 rounded bg-muted animate-pulse w-4" /></TableCell>
+                          <TableCell><div className="h-4 rounded bg-muted animate-pulse w-32" /></TableCell>
+                          <TableCell><div className="h-4 rounded bg-muted animate-pulse w-24" /></TableCell>
+                          <TableCell><div className="h-4 rounded bg-muted animate-pulse w-16" /></TableCell>
+                          <TableCell><div className="h-4 rounded bg-muted animate-pulse w-20" /></TableCell>
+                          <TableCell><div className="h-4 rounded bg-muted animate-pulse w-16" /></TableCell>
+                          <TableCell><div className="h-4 rounded bg-muted animate-pulse w-20" /></TableCell>
+                          <TableCell><div className="h-4 rounded bg-muted animate-pulse w-16" /></TableCell>
+                        </TableRow>
+                      ))
+                    ) : currentReleases.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="py-12 text-center text-muted-foreground text-sm">
+                          No releases in this category
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      currentReleases.map((r) => (
+                        <TableRow key={r.id} className="hover:bg-muted/30">
+                          <TableCell>
+                            <Disc3 className="size-4 text-muted-foreground" />
+                          </TableCell>
+                          <TableCell className="font-medium text-foreground">
+                            <Link href={`/catalog/releases/${r.id}`} className="hover:text-primary transition-colors">
+                              {truncate(r.title, 36)}
+                            </Link>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-sm">{truncate(r.primary_artist, 24)}</TableCell>
+                          <TableCell>
                             <Badge variant="outline" className="text-xs capitalize">{r.type}</Badge>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${STATUS_BADGE[r.status] ?? "bg-secondary text-secondary-foreground"}`}>
+                          </TableCell>
+                          <TableCell>
+                            <span
+                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${STATUS_BADGE[r.status] ?? "bg-muted text-muted-foreground"}`}
+                            >
                               {r.status.replace(/_/g, " ")}
                             </span>
-                          </td>
-                          <td className="px-4 py-3">
+                          </TableCell>
+                          <TableCell>
                             {r.metadata_completeness_score != null ? (
-                              <div className="flex items-center gap-1.5">
-                                <div className="w-16 h-1.5 rounded-full bg-secondary overflow-hidden">
-                                  <div className={`h-full rounded-full ${r.metadata_completeness_score >= 80 ? "bg-success" : r.metadata_completeness_score >= 50 ? "bg-warning" : "bg-destructive"}`}
-                                    style={{ width: `${r.metadata_completeness_score}%` }} />
-                                </div>
-                                <span className="text-xs text-muted-foreground">{r.metadata_completeness_score}%</span>
-                              </div>
-                            ) : <span className="text-muted-foreground text-xs">—</span>}
-                          </td>
-                          <td className="px-4 py-3 text-muted-foreground text-xs">{formatDate(r.release_date)}</td>
-                          <td className="px-4 py-3">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="size-7"><MoreHorizontal className="size-4" /></Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => toast.info("Force publish — coming soon")}>Force Publish</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => toast.info("Schedule — coming soon")}>Schedule</DropdownMenuItem>
-                                <DropdownMenuItem className="text-destructive" onClick={() => toast.info("Takedown — coming soon")}>Takedown</DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="tracks" className="mt-4">
-            <Card>
-              <CardContent className="p-0">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border bg-secondary/30">
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Track</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Release</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">ISRC</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Audio</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Added</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {tracks.map(t => (
-                      <tr key={t.id} className="hover:bg-secondary/20">
-                        <td className="px-4 py-3 font-medium text-foreground">{truncate(t.title, 30)}</td>
-                        <td className="px-4 py-3 text-muted-foreground text-xs">{(t.releases as any)?.title ?? "—"}</td>
-                        <td className="px-4 py-3 text-muted-foreground text-xs font-mono">{t.isrc ?? "—"}</td>
-                        <td className="px-4 py-3">
-                          <Badge variant={t.upload_status === "complete" ? "secondary" : "destructive"} className="text-xs capitalize">
-                            {t.upload_status}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground text-xs">{formatDate(t.created_at)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                              <span className="text-xs text-muted-foreground">{r.metadata_completeness_score}%</span>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-xs">{formatDate(r.release_date)}</TableCell>
+                          <TableCell>
+                            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" asChild>
+                              <Link href={`/catalog/releases/${r.id}`}>
+                                Open <ChevronRight className="size-3" />
+                              </Link>
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
               </CardContent>
             </Card>
           </TabsContent>

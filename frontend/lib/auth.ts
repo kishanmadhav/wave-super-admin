@@ -7,7 +7,7 @@ export interface AdminIdentity {
   role: 'maker' | 'checker' | 'admin' | 'super_admin'
   status: string
   permissions: string[]
-  last_active_at: string | null
+  last_login: string | null
 }
 
 // In-memory cache — cleared on sign out

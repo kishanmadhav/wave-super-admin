@@ -29,20 +29,24 @@ export class CatalogController {
 
   @Patch('releases/:id/status')
   @ApiOperation({ summary: 'Update release status' })
-  updateReleaseStatus(@Param('id') id: string, @Body() body: { status: string }, @Request() req: any) {
-    return this.catalogService.updateReleaseStatus(id, body.status, req.admin.id);
+  updateReleaseStatus(
+    @Param('id') id: string,
+    @Body() body: { status: string; comment?: string },
+    @Request() req: any,
+  ) {
+    return this.catalogService.updateReleaseStatus(id, body.status, req.admin.id, body.comment);
   }
 
   @Post('releases/:id/takedown')
   @ApiOperation({ summary: 'Emergency takedown a release' })
-  takedown(@Param('id') id: string, @Request() req: any) {
-    return this.catalogService.takedownRelease(id, req.admin.id);
+  takedown(@Param('id') id: string, @Body() body: { comment?: string }, @Request() req: any) {
+    return this.catalogService.takedownRelease(id, req.admin.id, body?.comment);
   }
 
   @Post('releases/:id/force-publish')
   @ApiOperation({ summary: 'Force publish a release' })
-  forcePublish(@Param('id') id: string, @Request() req: any) {
-    return this.catalogService.forcePublishRelease(id, req.admin.id);
+  forcePublish(@Param('id') id: string, @Body() body: { comment?: string }, @Request() req: any) {
+    return this.catalogService.forcePublishRelease(id, req.admin.id, body?.comment);
   }
 
   @Get('tracks')

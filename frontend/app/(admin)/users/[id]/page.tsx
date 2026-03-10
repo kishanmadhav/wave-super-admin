@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { supabase } from "@/lib/supabase"
+import { api } from "@/lib/api"
 import { formatDateTime, initials } from "@/lib/utils"
 import {
   ArrowLeft, Mail, Globe, Calendar, ShieldCheck, UserX, Flag,
@@ -25,6 +25,7 @@ interface Profile {
   deletion_pending: boolean; fraud_flagged: boolean | null
   suspended_at: string | null; suspended_reason: string | null
   banned_at: string | null; created_at: string; updated_at: string
+  display_name?: string
 }
 
 interface Release { id: string; title: string; status: string; created_at: string }
@@ -42,44 +43,101 @@ export default function UserDetailPage() {
 
   useEffect(() => {
     async function load() {
-      const [profileRes, releasesRes, disputesRes, ledgerRes] = await Promise.all([
-        supabase.from("profiles").select("*").eq("id", id).single(),
-        supabase.from("releases").select("id,title,status,created_at").eq("profile_id", id).order("created_at", { ascending: false }).limit(10),
-        supabase.from("disputes").select("id,type,status,created_at").eq("submitted_by", id).order("created_at", { ascending: false }).limit(10),
-        supabase.from("ledger_entries").select("id,source,nano_delta,mini_delta,created_at").eq("profile_id", id).order("created_at", { ascending: false }).limit(20),
-      ])
-      setProfile(profileRes.data)
-      setReleases(releasesRes.data ?? [])
-      setDisputes(disputesRes.data ?? [])
-      setLedger(ledgerRes.data ?? [])
+      try {
+        const [p, r, d, l] = await Promise.all([
+          api.get<Profile>(`/users/${id}`),
+          api.get<Release[]>(`/users/${id}/releases`),
+          api.get<Dispute[]>(`/users/${id}/disputes`),
+          api.get<LedgerEntry[]>(`/users/${id}/ledger`),
+        ])
+        setProfile(p)
+        setReleases(r ?? [])
+        setDisputes(d ?? [])
+        setLedger(l ?? [])
+      } catch (e: any) {
+        toast.error(e.message ?? "Failed to load user")
+        setProfile(null)
+        setReleases([])
+        setDisputes([])
+        setLedger([])
+      }
       setLoading(false)
     }
     load()
   }, [id])
 
+  async function suspend() {
+    const reason = prompt("Suspend reason?", "Suspended by admin") ?? ""
+    if (!reason) return
+    try {
+      await api.post(`/users/${id}/suspend`, { reason })
+      toast.success("User suspended")
+      const p = await api.get<Profile>(`/users/${id}`)
+      setProfile(p)
+    } catch (e: any) {
+      toast.error(e.message ?? "Suspend failed")
+    }
+  }
+
+  async function unsuspend() {
+    try {
+      await api.post(`/users/${id}/unsuspend`)
+      toast.success("User re-enabled")
+      const p = await api.get<Profile>(`/users/${id}`)
+      setProfile(p)
+    } catch (e: any) {
+      toast.error(e.message ?? "Unsuspend failed")
+    }
+  }
+
+  async function ban() {
+    const reason = prompt("Ban reason?", "Banned by admin") ?? ""
+    if (!reason) return
+    try {
+      await api.post(`/users/${id}/ban`, { reason })
+      toast.success("User banned")
+      const p = await api.get<Profile>(`/users/${id}`)
+      setProfile(p)
+    } catch (e: any) {
+      toast.error(e.message ?? "Ban failed")
+    }
+  }
+
+  async function flagFraud() {
+    try {
+      await api.post(`/users/${id}/flag-fraud`)
+      toast.success("User flagged for fraud")
+      const p = await api.get<Profile>(`/users/${id}`)
+      setProfile(p)
+    } catch (e: any) {
+      toast.error(e.message ?? "Flag failed")
+    }
+  }
+
   if (loading) return (
     <div>
-      <AdminTopbar title="User Detail" />
+      <AdminTopbar title="Creator Detail" />
       <div className="p-6 flex items-center justify-center min-h-64 text-muted-foreground">Loading…</div>
     </div>
   )
 
   if (!profile) return (
     <div>
-      <AdminTopbar title="User Not Found" />
-      <div className="p-6 text-muted-foreground">No user found with this ID.</div>
+      <AdminTopbar title="Creator Not Found" />
+      <div className="p-6 text-muted-foreground">No creator found with this ID.</div>
     </div>
   )
 
+  const displayName = profile.display_name ?? profile.username ?? profile.email
   const status = profile.banned_at ? "banned" : profile.suspended_at ? "suspended" : profile.fraud_flagged ? "flagged" : "active"
 
   return (
     <div>
-      <AdminTopbar title="User Detail" />
+      <AdminTopbar title="Creator Detail" />
       <div className="p-6 max-w-[1200px] space-y-6">
         {/* Back */}
         <Button variant="ghost" size="sm" onClick={() => router.push("/users")} className="gap-1.5 text-muted-foreground">
-          <ArrowLeft className="size-4" /> Back to Users
+          <ArrowLeft className="size-4" /> Back to Creators
         </Button>
 
         {/* Header card */}
@@ -89,12 +147,12 @@ export default function UserDetailPage() {
               <div className="flex items-center gap-4">
                 <Avatar className="size-14">
                   <AvatarFallback className="bg-primary/15 text-primary text-lg">
-                    {initials(profile.username ?? profile.email)}
+                    {initials(displayName)}
                   </AvatarFallback>
                 </Avatar>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-xl font-bold text-foreground">{profile.username ?? profile.email}</h2>
+                    <h2 className="text-xl font-bold text-foreground">{displayName}</h2>
                     <Badge variant={status === "active" ? "secondary" : "destructive"} className="capitalize text-xs">{status}</Badge>
                     {profile.account_type && <Badge variant="outline" className="capitalize text-xs">{profile.account_type}</Badge>}
                   </div>
@@ -115,11 +173,20 @@ export default function UserDetailPage() {
                 <Button variant="outline" size="sm" className="gap-1.5" onClick={() => toast.info("Impersonate — coming soon")}>
                   <ExternalLink className="size-3.5" /> Impersonate
                 </Button>
-                <Button variant="outline" size="sm" className="gap-1.5 text-warning border-warning/40 hover:bg-warning/10" onClick={() => toast.info("Suspend action — coming soon")}>
-                  <UserX className="size-3.5" /> Suspend
-                </Button>
-                <Button variant="outline" size="sm" className="gap-1.5 text-destructive border-destructive/40 hover:bg-destructive/10" onClick={() => toast.info("Flag action — coming soon")}>
+                {profile.suspended_at ? (
+                  <Button variant="outline" size="sm" className="gap-1.5 text-warning border-warning/40 hover:bg-warning/10" onClick={unsuspend}>
+                    <UserX className="size-3.5" /> Re-enable
+                  </Button>
+                ) : (
+                  <Button variant="outline" size="sm" className="gap-1.5 text-warning border-warning/40 hover:bg-warning/10" onClick={suspend}>
+                    <UserX className="size-3.5" /> Suspend
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" className="gap-1.5 text-destructive border-destructive/40 hover:bg-destructive/10" onClick={flagFraud}>
                   <Flag className="size-3.5" /> Flag
+                </Button>
+                <Button variant="outline" size="sm" className="gap-1.5 text-destructive border-destructive/40 hover:bg-destructive/10" onClick={ban}>
+                  <ShieldCheck className="size-3.5" /> Ban
                 </Button>
                 <Button variant="outline" size="sm" className="gap-1.5" onClick={() => toast.info("Message — coming soon")}>
                   <MessageSquare className="size-3.5" /> Message

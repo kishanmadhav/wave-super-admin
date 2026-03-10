@@ -29,18 +29,27 @@ export class CatalogService {
     return data;
   }
 
-  async updateReleaseStatus(id: string, status: string, adminId: string) {
+  async updateReleaseStatus(id: string, status: string, adminId: string, comment?: string) {
+    const updates: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
+    if (comment != null && comment.trim() !== '') {
+      updates.reviewer_comment = comment.trim();
+    }
     const { data, error } = await this.supabase.getClient()
       .from('releases')
-      .update({ status, updated_at: new Date().toISOString() })
+      .update(updates)
       .eq('id', id)
       .select()
       .single();
     if (error) throw error;
     await this.supabase.getClient()
       .from('audit_logs')
-      .insert({ admin_id: adminId, action: 'update_status', entity_type: 'release', entity_id: id,
-        changes: { status } });
+      .insert({
+        admin_id: adminId,
+        action: 'update_status',
+        entity_type: 'release',
+        entity_id: id,
+        changes: { status, comment: comment ?? null },
+      });
     return data;
   }
 
@@ -57,11 +66,11 @@ export class CatalogService {
     return { data: data ?? [], total: count ?? 0 };
   }
 
-  async takedownRelease(id: string, adminId: string) {
-    return this.updateReleaseStatus(id, 'takedown', adminId);
+  async takedownRelease(id: string, adminId: string, comment?: string) {
+    return this.updateReleaseStatus(id, 'takedown', adminId, comment);
   }
 
-  async forcePublishRelease(id: string, adminId: string) {
-    return this.updateReleaseStatus(id, 'published', adminId);
+  async forcePublishRelease(id: string, adminId: string, comment?: string) {
+    return this.updateReleaseStatus(id, 'published', adminId, comment);
   }
 }

@@ -37,6 +37,7 @@ async function bootstrap() {
     .addTag('auth',      'Admin identity')
     .addTag('users',     'Platform user management')
     .addTag('catalog',   'Releases & tracks')
+    .addTag('creators',  'Creator entities (artists & labels)')
     .addTag('pipelines', 'Verification & review queues')
     .addTag('disputes',  'Dispute case management')
     .addTag('wallets',   'Ledger & wallets')

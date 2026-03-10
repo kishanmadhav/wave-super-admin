@@ -11,7 +11,7 @@ export interface AdminIdentity {
   role: string;
   status: string;
   created_at: string;
-  last_active_at: string | null;
+  last_login: string | null;
   permissions: string[];
 }
 
@@ -29,7 +29,7 @@ export class AuthService {
     const { data, error } = await this.supabase
       .getClient()
       .from('admin_users')
-      .select('id, role, status, created_at, last_active_at, permissions')
+      .select('id, role, status, created_at, last_login')
       .eq('id', userId)
       .single();
 
@@ -45,11 +45,11 @@ export class AuthService {
       .eq('id', userId)
       .single();
 
-    // Bump last_active_at in the background (fire-and-forget)
+    // Bump last_login in the background (fire-and-forget)
     this.supabase
       .getClient()
       .from('admin_users')
-      .update({ last_active_at: new Date().toISOString() })
+      .update({ last_login: new Date().toISOString() })
       .eq('id', userId)
       .then(() => {});
 
@@ -59,8 +59,9 @@ export class AuthService {
       role: data.role,
       status: data.status,
       created_at: data.created_at,
-      last_active_at: data.last_active_at,
-      permissions: data.permissions ?? [],
+      last_login: data.last_login,
+      // schema-1 admin_users doesn't store granular permissions. Keep this stable for the frontend.
+      permissions: data.role === 'super_admin' ? ['*'] : [],
     };
   }
 }

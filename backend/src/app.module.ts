@@ -4,6 +4,7 @@ import { DatabaseModule } from './modules/database/database.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
+import { CreatorsModule } from './modules/creators/creators.module';
 import { PipelinesModule } from './modules/pipelines/pipelines.module';
 import { DisputesModule } from './modules/disputes/disputes.module';
 import { WalletsModule } from './modules/wallets/wallets.module';
@@ -20,6 +21,7 @@ import { AuditModule } from './modules/audit/audit.module';
     AuthModule,
     UsersModule,
     CatalogModule,
+    CreatorsModule,
     PipelinesModule,
     DisputesModule,
     WalletsModule,

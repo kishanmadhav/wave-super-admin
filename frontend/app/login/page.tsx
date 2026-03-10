@@ -36,15 +36,19 @@ export default function LoginPage() {
       toast.success(`Welcome back, ${identity.email}`)
       router.push("/overview")
     } catch (err: any) {
-      const msg: string = err.message ?? "Login failed"
+      const msg: string = err?.message ?? "Login failed"
 
       // Surface a friendlier message for the common 403 case
       if (msg.includes("403") || msg.toLowerCase().includes("not a wave admin")) {
         setErrorMsg("Access denied — your account is not registered as a Wave admin.")
       } else if (msg.toLowerCase().includes("inactive") || msg.toLowerCase().includes("suspended")) {
         setErrorMsg("Your admin account is inactive. Contact a super admin.")
-      } else if (msg.toLowerCase().includes("invalid login") || msg.toLowerCase().includes("invalid credentials")) {
-        setErrorMsg("Invalid email or password.")
+      } else if (
+        msg.toLowerCase().includes("invalid login") ||
+        msg.toLowerCase().includes("invalid credentials") ||
+        msg.toLowerCase().includes("invalid") && msg.toLowerCase().includes("credentials")
+      ) {
+        setErrorMsg("Invalid email or password. (Use `wave_admin` — no spaces.)")
       } else {
         setErrorMsg(msg)
       }

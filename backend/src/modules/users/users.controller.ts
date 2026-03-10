@@ -12,6 +12,23 @@ import { AdminAuthGuard } from '../auth/guards';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
+  @Post()
+  @ApiOperation({ summary: 'Create a new platform user (auth + profile)' })
+  @ApiResponse({ status: 201, description: 'User created' })
+  createUser(
+    @Body()
+    body: {
+      email: string;
+      password: string;
+      account_type?: string;
+      country?: string;
+      timezone?: string;
+    },
+    @Request() req: any,
+  ) {
+    return this.usersService.createUser(body, req.admin.id);
+  }
+
   @Get()
   @ApiOperation({ summary: 'List all platform users with optional filters' })
   @ApiQuery({ name: 'search', required: false })

@@ -1,38 +1,126 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { SupabaseService } from '../database/supabase.service';
 
 @Injectable()
 export class UsersService {
   constructor(private readonly supabase: SupabaseService) {}
 
+  async createUser(
+    dto: {
+      email: string;
+      password: string;
+      account_type?: string;
+      country?: string;
+      timezone?: string;
+    },
+    adminId: string,
+  ) {
+    const { data, error } = await this.supabase.getClient().auth.admin.createUser({
+      email: dto.email,
+      password: dto.password,
+      email_confirm: true,
+    });
+
+    if (error) {
+      const msg = error.message?.toLowerCase?.() ?? '';
+      if (msg.includes('already') || msg.includes('registered')) {
+        throw new ConflictException('User already exists');
+      }
+      throw error;
+    }
+
+    const userId = data.user.id;
+
+    // Ensure application profile row exists with optional fields
+    const profilePatch: Record<string, unknown> = {
+      id: userId,
+      email: dto.email,
+    };
+    if (dto.account_type) profilePatch.account_type = dto.account_type;
+    if (dto.country) profilePatch.country = dto.country;
+    if (dto.timezone) profilePatch.timezone = dto.timezone;
+
+    await this.supabase
+      .getClient()
+      .from('profiles')
+      .upsert(profilePatch, { onConflict: 'id' });
+
+    await this.supabase
+      .getClient()
+      .from('audit_logs')
+      .insert({
+        admin_id: adminId,
+        action: 'create',
+        entity_type: 'profile',
+        entity_id: userId,
+        changes: { email: dto.email, account_type: dto.account_type ?? null },
+      });
+
+    return { id: userId, email: dto.email };
+  }
+
   async findAll(opts: { search?: string; type?: string; status?: string; limit?: number; offset?: number }) {
     const { search, type, status, limit = 50, offset = 0 } = opts;
     let q = this.supabase.getClient()
       .from('profiles')
-      .select('id,email,username,account_type,country,created_at,deletion_pending,fraud_flagged,suspended_at,banned_at', { count: 'exact' })
+      .select(
+        'id,email,username,org_name,account_type,country,created_at,deletion_pending,fraud_flagged,suspended_at,banned_at,' +
+        'artist_profiles(stage_name),label_profiles(label_name),artists(name)',
+        { count: 'exact' },
+      )
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
-    if (search) q = q.or(`email.ilike.%${search}%,username.ilike.%${search}%`);
+    if (search) {
+      q = q.or(`email.ilike.%${search}%,username.ilike.%${search}%,org_name.ilike.%${search}%`);
+    }
     if (type) q = q.eq('account_type', type);
     if (status === 'suspended') q = q.not('suspended_at', 'is', null);
     if (status === 'banned') q = q.not('banned_at', 'is', null);
     if (status === 'flagged') q = q.eq('fraud_flagged', true);
 
-    const { data, count, error } = await q;
+    const { data: rows, count, error } = await q;
     if (error) throw error;
-    return { data: data ?? [], total: count ?? 0 };
+
+    const data = (rows ?? []).map((row: any) => {
+      const ap = Array.isArray(row.artist_profiles) ? row.artist_profiles[0] : row.artist_profiles;
+      const lp = Array.isArray(row.label_profiles) ? row.label_profiles[0] : row.label_profiles;
+      const art = Array.isArray(row.artists) ? row.artists[0] : row.artists;
+      const display_name =
+        art?.name ?? ap?.stage_name ?? lp?.label_name ?? row.username ?? row.org_name ?? row.email ?? row.email;
+      return {
+        id: row.id,
+        email: row.email,
+        username: row.username,
+        org_name: row.org_name,
+        account_type: row.account_type,
+        country: row.country,
+        created_at: row.created_at,
+        deletion_pending: row.deletion_pending,
+        fraud_flagged: row.fraud_flagged,
+        suspended_at: row.suspended_at,
+        banned_at: row.banned_at,
+        display_name,
+      };
+    });
+
+    return { data, total: count ?? 0 };
   }
 
   async findById(id: string) {
-    const { data, error } = await this.supabase.getClient()
+    const { data: row, error } = await this.supabase.getClient()
       .from('profiles')
-      .select('*, artist_profiles(*), label_profiles(*)')
+      .select('*, artist_profiles(*), label_profiles(*), artists(name)')
       .eq('id', id)
       .single();
     if (error && error.code !== 'PGRST116') throw error;
-    if (!data) throw new NotFoundException(`User ${id} not found`);
-    return data;
+    if (!row) throw new NotFoundException(`User ${id} not found`);
+    const ap = Array.isArray(row.artist_profiles) ? row.artist_profiles[0] : row.artist_profiles;
+    const lp = Array.isArray(row.label_profiles) ? row.label_profiles[0] : row.label_profiles;
+    const art = Array.isArray(row.artists) ? row.artists[0] : row.artists;
+    const display_name =
+      art?.name ?? ap?.stage_name ?? lp?.label_name ?? row.username ?? row.org_name ?? row.email ?? row.email;
+    return { ...row, display_name };
   }
 
   async suspend(id: string, reason: string, adminId: string) {
