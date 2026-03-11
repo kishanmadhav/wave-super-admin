@@ -15,6 +15,8 @@ export class DisputesService {
     if (search) q = q.or(`target_name.ilike.%${search}%,claimant_name.ilike.%${search}%,claim_detail.ilike.%${search}%`);
     if (status === 'active') {
       q = q.in('status', ['open', 'under_review', 'escalated', 'awaiting_uploader_response', 'awaiting_claimant_response']);
+    } else if (status === 'resolved_claims') {
+      q = q.in('status', ['resolved', 'closed']);
     } else if (status) {
       q = q.eq('status', status);
     }
@@ -138,12 +140,38 @@ export class DisputesService {
     const now = new Date().toISOString();
     const ruling = opts.ruling;
 
+    const normalizedRuling =
+      ruling === 'in_favor_claimant' ? 'transfer_to_claimant'
+      : ruling === 'in_favor_content_owner' ? 'transfer_to_content_owner'
+      : ruling;
+
     let resolutionText = opts.resolution?.trim() ?? '';
-    if (ruling === 'in_favor_claimant') {
-      resolutionText = resolutionText ? `Ruled in favour of claimant. ${resolutionText}` : 'Ruled in favour of claimant.';
-    } else if (ruling === 'in_favor_content_owner') {
-      resolutionText = resolutionText ? `Ruled in favour of content owner. ${resolutionText}` : 'Ruled in favour of content owner.';
-    } else if (ruling === 'take_down') {
+
+    if (normalizedRuling === 'transfer_to_claimant' || normalizedRuling === 'transfer_to_content_owner') {
+      const releaseId = await this.getReleaseIdForDispute(id);
+      const disputeOwnerIds = await this.getOwnerProfileIdsForDispute(id);
+      const newOwnerId =
+        normalizedRuling === 'transfer_to_claimant'
+          ? disputeOwnerIds.claimant_profile_id
+          : disputeOwnerIds.content_owner_profile_id;
+
+      if (releaseId && newOwnerId) {
+        await db.from('releases').update({ profile_id: newOwnerId, updated_at: now }).eq('id', releaseId);
+        await db.from('assets').update({ profile_id: newOwnerId, updated_at: now }).eq('release_id', releaseId);
+        await db.from('audit_logs').insert({
+          admin_id: adminId,
+          action: 'dispute_transfer_ownership',
+          entity_type: 'release',
+          entity_id: releaseId,
+          changes: { new_profile_id: newOwnerId },
+        });
+      }
+
+      const who = normalizedRuling === 'transfer_to_claimant' ? 'claimant' : 'content owner';
+      resolutionText = resolutionText
+        ? `Ruled in favour of ${who}. Ownership transferred. ${resolutionText}`
+        : `Ruled in favour of ${who}. Ownership transferred.`;
+    } else if (normalizedRuling === 'take_down') {
       const releaseId = await this.getReleaseIdForDispute(id);
       if (releaseId) {
         await db.from('releases').update({ status: 'takedown', updated_at: now }).eq('id', releaseId);
@@ -155,6 +183,20 @@ export class DisputesService {
         });
       }
       resolutionText = resolutionText ? `Take down permanently. ${resolutionText}` : 'Content taken down permanently.';
+    } else if (normalizedRuling === 'take_down_cover_art') {
+      const releaseId = await this.getReleaseIdForDispute(id);
+      if (releaseId) {
+        await db.from('releases').update({ cover_art_url: null, updated_at: now }).eq('id', releaseId);
+        await db.from('audit_logs').insert({
+          admin_id: adminId,
+          action: 'dispute_takedown_cover_art',
+          entity_type: 'release',
+          entity_id: releaseId,
+        });
+      }
+      resolutionText = resolutionText ? `Cover art taken down. ${resolutionText}` : 'Cover art taken down.';
+    } else if (normalizedRuling === 'close') {
+      resolutionText = resolutionText ? `Closed (dismissed). ${resolutionText}` : 'Closed (dismissed).';
     }
 
     if (opts.internalNote?.trim()) {
@@ -201,5 +243,28 @@ export class DisputesService {
       return (track as { release_id: string } | null)?.release_id ?? null;
     }
     return null;
+  }
+
+  private async getOwnerProfileIdsForDispute(disputeId: string): Promise<{ claimant_profile_id: string | null; content_owner_profile_id: string | null }> {
+    const db = this.supabase.getClient();
+    const { data: dispute } = await db.from('disputes').select('submitted_by,target_type,target_id').eq('id', disputeId).single();
+    if (!dispute) return { claimant_profile_id: null, content_owner_profile_id: null };
+    const d = dispute as { submitted_by: string | null; target_type: string; target_id: string };
+    const claimant_profile_id = d.submitted_by ?? null;
+
+    let content_owner_profile_id: string | null = null;
+    if (d.target_type === 'release') {
+      const { data: rel } = await db.from('releases').select('profile_id').eq('id', d.target_id).single();
+      content_owner_profile_id = (rel as any)?.profile_id ?? null;
+    } else if (d.target_type === 'track') {
+      const { data: track } = await db.from('tracks').select('release_id').eq('id', d.target_id).single();
+      const releaseId = (track as any)?.release_id as string | null;
+      if (releaseId) {
+        const { data: rel } = await db.from('releases').select('profile_id').eq('id', releaseId).single();
+        content_owner_profile_id = (rel as any)?.profile_id ?? null;
+      }
+    }
+
+    return { claimant_profile_id, content_owner_profile_id };
   }
 }

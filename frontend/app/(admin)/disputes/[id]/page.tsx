@@ -240,7 +240,14 @@ export default function DisputeReviewPage() {
   const { id } = useParams<{ id: string }>()
   const [dispute, setDispute] = useState<DisputeDetail | null>(null)
   const [loading, setLoading] = useState(true)
-  const [rulingOption, setRulingOption] = useState<"in_favor_claimant" | "in_favor_content_owner" | "take_down" | "close" | "">("")
+  const [rulingOption, setRulingOption] = useState<
+    "transfer_to_claimant" |
+    "transfer_to_content_owner" |
+    "take_down" |
+    "take_down_cover_art" |
+    "close" |
+    ""
+  >("")
   const [rulingText, setRulingText] = useState("")
   const [internalNote, setInternalNote] = useState("")
   const [saving, setSaving] = useState(false)
@@ -331,6 +338,9 @@ export default function DisputeReviewPage() {
   const messages = dispute.dispute_messages ?? []
   const notes = dispute.dispute_internal_notes ?? []
   const contestedTracks = dispute.contested_tracks ?? []
+  const isOwnershipDispute = ["ownership_claim", "unauthorized_upload", "publishing_claim"].includes(dispute.type)
+  const isArtworkDispute = dispute.type === "artwork_violation"
+  const canTakeDownCoverArt = isArtworkDispute && dispute.target_type === "release"
 
   return (
     <div>
@@ -591,28 +601,34 @@ export default function DisputeReviewPage() {
             <CardTitle className="text-base flex items-center gap-2">
               <Scale className="size-4 text-primary" /> Make a ruling
             </CardTitle>
-            <p className="text-sm text-muted-foreground">Choose in favour of one party, take down the song permanently, or close the dispute.</p>
+            <p className="text-sm text-muted-foreground">
+              Choose a ruling. For ownership disputes, “rule in favour” will transfer ownership in the database (reflected in CMS too).
+            </p>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
               <Label className="text-xs mb-2 block">Ruling</Label>
               <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={rulingOption === "in_favor_claimant" ? "default" : "outline"}
-                  onClick={() => setRulingOption("in_favor_claimant")}
-                >
-                  Rule in favour of claimant
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={rulingOption === "in_favor_content_owner" ? "default" : "outline"}
-                  onClick={() => setRulingOption("in_favor_content_owner")}
-                >
-                  Rule in favour of content owner
-                </Button>
+                {isOwnershipDispute && (
+                  <>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={rulingOption === "transfer_to_claimant" ? "default" : "outline"}
+                      onClick={() => setRulingOption("transfer_to_claimant")}
+                    >
+                      Rule in favour of claimant (transfer ownership)
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={rulingOption === "transfer_to_content_owner" ? "default" : "outline"}
+                      onClick={() => setRulingOption("transfer_to_content_owner")}
+                    >
+                      Rule in favour of content owner (transfer ownership)
+                    </Button>
+                  </>
+                )}
                 <Button
                   type="button"
                   size="sm"
@@ -622,6 +638,17 @@ export default function DisputeReviewPage() {
                 >
                   Take down song permanently
                 </Button>
+                {canTakeDownCoverArt && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={rulingOption === "take_down_cover_art" ? "destructive" : "outline"}
+                    className={rulingOption === "take_down_cover_art" ? "" : "text-destructive border-destructive/40 hover:bg-destructive/10"}
+                    onClick={() => setRulingOption("take_down_cover_art")}
+                  >
+                    Take down cover art
+                  </Button>
+                )}
                 <Button
                   type="button"
                   size="sm"

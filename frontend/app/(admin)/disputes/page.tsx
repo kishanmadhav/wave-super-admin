@@ -55,8 +55,12 @@ export default function DisputesPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
+      const statusParam =
+        statusFilter === "all" ? undefined
+        : statusFilter === "resolved_claims" ? "resolved_claims"
+        : statusFilter
       const res = await api.get<{ data: Dispute[]; total: number }>("/disputes", {
-        status: statusFilter,
+        status: statusParam,
         search: search || undefined,
         limit: 50,
         offset: 0,
@@ -89,6 +93,7 @@ export default function DisputesPage() {
             <SelectContent>
               <SelectItem value="active">Active</SelectItem>
               <SelectItem value="all">All</SelectItem>
+              <SelectItem value="resolved_claims">Resolved claims</SelectItem>
               <SelectItem value="open">Open</SelectItem>
               <SelectItem value="under_review">Under Review</SelectItem>
               <SelectItem value="escalated">Escalated</SelectItem>
