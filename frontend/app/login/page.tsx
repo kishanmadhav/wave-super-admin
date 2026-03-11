@@ -23,22 +23,11 @@ export default function LoginPage() {
     setErrorMsg(null)
 
     try {
-      /**
-       * signInAdmin does two things:
-       *  1. Calls supabase.auth.signInWithPassword — validates credentials
-       *  2. Calls GET /auth/me on the super-admin backend (port 3003)
-       *     The backend's AdminAuthGuard validates the JWT and confirms the
-       *     user exists in admin_users with status = 'active'.
-       *     If not an admin, the backend returns 403 and signInAdmin throws.
-       */
       const identity = await signInAdmin(email, password)
-
       toast.success(`Welcome back, ${identity.email}`)
       router.push("/overview")
     } catch (err: any) {
       const msg: string = err?.message ?? "Login failed"
-
-      // Surface a friendlier message for the common 403 case
       if (msg.includes("403") || msg.toLowerCase().includes("not a wave admin")) {
         setErrorMsg("Access denied — your account is not registered as a Wave admin.")
       } else if (msg.toLowerCase().includes("inactive") || msg.toLowerCase().includes("suspended")) {
@@ -46,7 +35,7 @@ export default function LoginPage() {
       } else if (
         msg.toLowerCase().includes("invalid login") ||
         msg.toLowerCase().includes("invalid credentials") ||
-        msg.toLowerCase().includes("invalid") && msg.toLowerCase().includes("credentials")
+        (msg.toLowerCase().includes("invalid") && msg.toLowerCase().includes("credentials"))
       ) {
         setErrorMsg("Invalid email or password. (Use `wave_admin` — no spaces.)")
       } else {
@@ -58,28 +47,27 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="w-full max-w-sm">
-        {/* Logo */}
-        <div className="mb-8 flex flex-col items-center gap-3">
-          <div className="flex items-center gap-2.5">
-            <WaveLogo />
-            <span className="text-xl font-bold text-foreground">Wave</span>
-          </div>
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background p-6">
+      <div className="flex w-full max-w-md flex-col items-center gap-8 text-center">
+        {/* Logo + tagline — same structure as CMS landing (frame-o0) */}
+        <div className="flex flex-col items-center gap-4">
+          <WaveLogo className="h-14 w-auto sm:h-16 md:h-20" />
+          <p className="text-base text-muted-foreground text-pretty">
+            Platform operator console. Restricted to Wave admins.
+          </p>
           <div className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1">
             <ShieldCheck className="size-3.5 text-primary" />
-            <span className="text-xs font-medium text-muted-foreground">Super Admin Console</span>
+            <span className="text-xs font-medium text-muted-foreground">Super Admin</span>
           </div>
         </div>
 
-        {/* Card */}
-        <div className="rounded-xl border border-border bg-card p-6 shadow-lg">
+        {/* Sign-in card */}
+        <div className="w-full rounded-xl border border-border bg-card p-6 shadow-lg text-left">
           <h1 className="mb-1 text-lg font-semibold text-foreground">Sign in</h1>
           <p className="mb-6 text-sm text-muted-foreground">
-            Restricted to Wave platform operators.
+            Use your Wave admin credentials.
           </p>
 
-          {/* Error banner */}
           {errorMsg && (
             <div className="mb-4 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5">
               <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
@@ -124,9 +112,9 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <p className="mt-6 text-center text-xs text-muted-foreground">
-          Wave Super Admin · Internal use only
-        </p>
+        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+          <span>Wave Super Admin · Internal use only</span>
+        </div>
       </div>
     </div>
   )

@@ -365,7 +365,7 @@ export default function CreatorsPage() {
                               </Avatar>
                               <div className="min-w-0">
                                 <Link
-                                  href={`/users/${p.id}`}
+                                  href={`/creators/${p.id}`}
                                   className="font-medium text-foreground hover:text-primary transition-colors block truncate"
                                 >
                                   {truncate(p.display_name, 36)}
@@ -399,7 +399,7 @@ export default function CreatorsPage() {
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
                                 <DropdownMenuItem asChild>
-                                  <Link href={`/users/${p.id}`}>View detail</Link>
+                                  <Link href={`/creators/${p.id}`}>View detail</Link>
                                 </DropdownMenuItem>
                                 {status === "suspended" ? (
                                   <DropdownMenuItem onClick={() => unsuspendUser(p.id)}>
@@ -490,6 +490,11 @@ export default function CreatorsPage() {
                               <Button variant="ghost" size="icon" className="size-7"><MoreHorizontal className="size-4" /></Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
+                              {a.profile_id && (
+                                <DropdownMenuItem asChild>
+                                  <Link href={`/creators/${a.profile_id}`}>View detail</Link>
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuItem
                                 onClick={() => {
                                   if (!a.profile_id) return toast.error("Artist has no linked profile")
@@ -581,6 +586,11 @@ export default function CreatorsPage() {
                               <Button variant="ghost" size="icon" className="size-7"><MoreHorizontal className="size-4" /></Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
+                              {l.profile_id && (
+                                <DropdownMenuItem asChild>
+                                  <Link href={`/creators/${l.profile_id}`}>View detail</Link>
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuItem
                                 onClick={() => {
                                   if (!l.profile_id) return toast.error("Label has no linked profile")

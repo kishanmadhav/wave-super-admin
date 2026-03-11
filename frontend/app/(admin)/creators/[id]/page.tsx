@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { AdminTopbar } from "@/components/layout/admin-topbar"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -13,8 +13,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { api } from "@/lib/api"
 import { formatDateTime, initials } from "@/lib/utils"
 import {
-  ArrowLeft, Mail, Globe, Calendar, ShieldCheck, UserX, Flag,
-  Wallet, ScrollText, AlertTriangle, Copy,
+  ArrowLeft, Globe, Calendar, ShieldCheck, UserX, Flag,
+  Copy,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -32,7 +32,7 @@ interface Release { id: string; title: string; status: string; created_at: strin
 interface Dispute { id: string; type: string; status: string; created_at: string }
 interface LedgerEntry { id: string; source: string; nano_delta: number; mini_delta: number; created_at: string }
 
-export default function UserDetailPage() {
+export default function CreatorDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -55,7 +55,7 @@ export default function UserDetailPage() {
         setDisputes(d ?? [])
         setLedger(l ?? [])
       } catch (e: any) {
-        toast.error(e.message ?? "Failed to load user")
+        toast.error(e.message ?? "Failed to load creator")
         setProfile(null)
         setReleases([])
         setDisputes([])
@@ -71,7 +71,7 @@ export default function UserDetailPage() {
     if (!reason) return
     try {
       await api.post(`/users/${id}/suspend`, { reason })
-      toast.success("User suspended")
+      toast.success("Creator suspended")
       const p = await api.get<Profile>(`/users/${id}`)
       setProfile(p)
     } catch (e: any) {
@@ -82,7 +82,7 @@ export default function UserDetailPage() {
   async function unsuspend() {
     try {
       await api.post(`/users/${id}/unsuspend`)
-      toast.success("User re-enabled")
+      toast.success("Creator re-enabled")
       const p = await api.get<Profile>(`/users/${id}`)
       setProfile(p)
     } catch (e: any) {
@@ -95,7 +95,7 @@ export default function UserDetailPage() {
     if (!reason) return
     try {
       await api.post(`/users/${id}/ban`, { reason })
-      toast.success("User banned")
+      toast.success("Creator banned")
       const p = await api.get<Profile>(`/users/${id}`)
       setProfile(p)
     } catch (e: any) {
@@ -106,7 +106,7 @@ export default function UserDetailPage() {
   async function flagFraud() {
     try {
       await api.post(`/users/${id}/flag-fraud`)
-      toast.success("User flagged for fraud")
+      toast.success("Creator flagged for fraud")
       const p = await api.get<Profile>(`/users/${id}`)
       setProfile(p)
     } catch (e: any) {
@@ -135,9 +135,9 @@ export default function UserDetailPage() {
     <div>
       <AdminTopbar title="Creator Detail" />
       <div className="p-6 max-w-[1200px] space-y-6">
-        {/* Back */}
-        <Button variant="ghost" size="sm" onClick={() => router.push("/users")} className="gap-1.5 text-muted-foreground">
-          <ArrowLeft className="size-4" /> Back to Users
+        {/* Back — stays in Creators section */}
+        <Button variant="ghost" size="sm" onClick={() => router.push("/creators")} className="gap-1.5 text-muted-foreground">
+          <ArrowLeft className="size-4" /> Back to Creators
         </Button>
 
         {/* Header card */}
@@ -168,7 +168,6 @@ export default function UserDetailPage() {
                 </div>
               </div>
 
-              {/* Actions */}
               <div className="flex items-center gap-2 flex-wrap">
                 {profile.suspended_at ? (
                   <Button variant="outline" size="sm" className="gap-1.5 text-warning border-warning/40 hover:bg-warning/10" onClick={unsuspend}>
@@ -188,7 +187,6 @@ export default function UserDetailPage() {
               </div>
             </div>
 
-            {/* Quick meta */}
             <Separator className="my-4" />
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
               <div>
@@ -215,7 +213,6 @@ export default function UserDetailPage() {
           </CardContent>
         </Card>
 
-        {/* Tabs */}
         <Tabs defaultValue="releases">
           <TabsList>
             <TabsTrigger value="releases">Releases ({releases.length})</TabsTrigger>

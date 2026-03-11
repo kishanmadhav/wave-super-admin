@@ -16,7 +16,6 @@ import {
   Wallet,
   Settings2,
   ScrollText,
-  ShieldCheck,
   ChevronRight,
 } from "lucide-react"
 
@@ -66,19 +65,9 @@ export function AdminSidebar() {
   return (
     <TooltipProvider delayDuration={0}>
       <aside className="flex h-screen w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
-        {/* Logo */}
+        {/* Logo — same as CMS: logo only in header */}
         <div className="flex items-center gap-2.5 border-b border-sidebar-border px-5 py-4">
           <WaveLogo />
-          <div>
-            <p className="text-sm font-bold text-sidebar-foreground leading-tight">Wave</p>
-            <p className="text-[10px] text-sidebar-foreground/50 leading-tight">Super Admin</p>
-          </div>
-          <div className="ml-auto">
-            <div className="flex items-center gap-1 rounded-full bg-primary/15 px-1.5 py-0.5">
-              <ShieldCheck className="size-2.5 text-primary" />
-              <span className="text-[9px] font-semibold text-primary">PROD</span>
-            </div>
-          </div>
         </div>
 
         {/* Nav */}

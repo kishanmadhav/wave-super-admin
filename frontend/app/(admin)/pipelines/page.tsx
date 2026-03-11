@@ -68,6 +68,44 @@ interface VerificationDetail {
 const RISK_COLOR = (score: number) =>
   score >= 70 ? "text-destructive" : score >= 40 ? "text-warning" : "text-success"
 
+/** Risk score 0–100 from list item completeness (higher = riskier). */
+function riskScoreFromList(v: AccountVerif): number {
+  const fields = [v.display_name?.trim(), v.account_name?.trim(), v.email?.trim(), v.country?.trim()]
+  const filled = fields.filter(Boolean).length
+  const completeness = filled / 4
+  return Math.round((1 - completeness) * 100)
+}
+
+/** Risk score 0–100 from detail completeness (higher = riskier). */
+function riskScoreFromDetail(d: VerificationDetail): number {
+  let filled = 0
+  let total = 0
+  const add = (val: string | null | undefined) => {
+    total++
+    if (val != null && String(val).trim() !== "") filled++
+  }
+  add(d.display_name)
+  add(d.email)
+  add(d.country)
+  add(d.timezone)
+  add(d.username)
+  add(d.org_name)
+  if (d.artist_profile) {
+    add(d.artist_profile.stage_name)
+    add(d.artist_profile.legal_name)
+    add(d.artist_profile.primary_genre)
+    add(d.artist_profile.primary_language)
+  }
+  if (d.label_profile) {
+    add(d.label_profile.label_name)
+    add(d.label_profile.legal_entity_name)
+    add(d.label_profile.registered_country)
+  }
+  if (total === 0) return 50
+  const completeness = filled / total
+  return Math.round((1 - completeness) * 100)
+}
+
 type StatusFilter = "all" | "pending" | "verified" | "rejected" | "none"
 
 export default function PipelinesPage() {
@@ -153,6 +191,9 @@ export default function PipelinesPage() {
             {detailLoading ? (
               <Card><CardContent className="p-8"><div className="h-32 bg-muted animate-pulse rounded" /></CardContent></Card>
             ) : detail ? (
+              (() => {
+                const detailRisk = riskScoreFromDetail(detail)
+                return (
               <Card>
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between flex-wrap gap-2">
@@ -175,7 +216,7 @@ export default function PipelinesPage() {
                         <div className="flex gap-2"><dt className="text-muted-foreground w-24">Email</dt><dd className="flex items-center gap-1"><Mail className="size-3.5" />{detail.email}</dd></div>
                         <div className="flex gap-2"><dt className="text-muted-foreground w-24">Country</dt><dd className="flex items-center gap-1"><Globe className="size-3.5" />{detail.country ?? "—"}</dd></div>
                         <div className="flex gap-2"><dt className="text-muted-foreground w-24">Timezone</dt><dd>{detail.timezone ?? "—"}</dd></div>
-                        <div className="flex gap-2"><dt className="text-muted-foreground w-24">Risk score</dt><dd className={RISK_COLOR(detail.risk_score)}>{detail.risk_score}/100</dd></div>
+                        <div className="flex gap-2"><dt className="text-muted-foreground w-24">Risk score</dt><dd className={RISK_COLOR(detailRisk)} title="Based on profile completeness">{detailRisk}/100</dd></div>
                         <div className="flex gap-2"><dt className="text-muted-foreground w-24">Joined</dt><dd>{formatDateTime(detail.created_at)}</dd></div>
                         {(detail.profile as any)?.suspended_at != null && (
                           <div className="flex gap-2"><dt className="text-muted-foreground w-24">Suspended</dt><dd className="text-warning">{formatDateTime((detail.profile as any).suspended_at)}</dd></div>
@@ -284,6 +325,8 @@ export default function PipelinesPage() {
                   </div>
                 </CardContent>
               </Card>
+                )
+              })()
             ) : null}
           </>
         ) : (
@@ -323,7 +366,9 @@ export default function PipelinesPage() {
                   <div className="py-12 text-center text-muted-foreground text-sm">No creators match this filter</div>
                 ) : (
                   <div className="space-y-3">
-                    {accountVerifs.map((v) => (
+                    {accountVerifs.map((v) => {
+                      const risk = riskScoreFromList(v)
+                      return (
                       <div
                         key={v.profile_id}
                         className="flex items-start justify-between gap-4 p-4 rounded-lg border border-border hover:bg-muted/30 transition-colors"
@@ -337,7 +382,7 @@ export default function PipelinesPage() {
                           <p className="text-xs text-muted-foreground mt-1">{v.email} {v.country ? `· ${v.country}` : ""}</p>
                           <div className="flex items-center gap-3 mt-2 text-xs">
                             <span className="flex items-center gap-1 text-muted-foreground"><Clock className="size-3" />{formatDateTime(v.created_at)}</span>
-                            <span className={`font-medium ${RISK_COLOR(v.risk_score)}`}>Risk: {v.risk_score}/100</span>
+                            <span className={`font-medium ${RISK_COLOR(risk)}`} title="Based on completeness of name, account name, email, country">Risk: {risk}/100</span>
                           </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
@@ -352,7 +397,8 @@ export default function PipelinesPage() {
                           </Button>
                         </div>
                       </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </CardContent>

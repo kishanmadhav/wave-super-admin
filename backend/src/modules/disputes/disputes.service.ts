@@ -156,14 +156,63 @@ export class DisputesService {
           : disputeOwnerIds.content_owner_profile_id;
 
       if (releaseId && newOwnerId) {
-        await db.from('releases').update({ profile_id: newOwnerId, updated_at: now }).eq('id', releaseId);
+        const winnerDisplay = await this.getProfileDisplay(newOwnerId);
+        const winnerName = winnerDisplay.display_name;
+
+        // 1. Release: profile_id and all owner/artist fields to winning party
+        await db
+          .from('releases')
+          .update({
+            profile_id: newOwnerId,
+            primary_artist: winnerName,
+            license_owner: winnerName,
+            updated_at: now,
+          })
+          .eq('id', releaseId);
+
+        // 2. Assets: profile_id (ownership)
         await db.from('assets').update({ profile_id: newOwnerId, updated_at: now }).eq('release_id', releaseId);
+
+        // 3. Tracks: every owner/artist mention to winning party
+        const { data: releaseTracks } = await db.from('tracks').select('id').eq('release_id', releaseId);
+        const trackIds = (releaseTracks ?? []).map((t: { id: string }) => t.id);
+        if (trackIds.length > 0) {
+          await db
+            .from('tracks')
+            .update({
+              primary_artist: winnerName,
+              rights_owner: winnerName,
+              updated_at: now,
+            })
+            .in('id', trackIds);
+        }
+
+        // 4. Split recipients: assign 100% to winning party (replace existing for this release)
+        await db.from('split_recipients').delete().eq('release_id', releaseId);
+        await db.from('split_recipients').insert({
+          release_id: releaseId,
+          name: winnerName,
+          role: 'artist',
+          share_percent: 100,
+        });
+
+        // 5. Contributors: replace with winning party so credits transfer fully
+        for (const trackId of trackIds) {
+          await db.from('contributors').delete().eq('track_id', trackId);
+          await db.from('contributors').insert({
+            track_id: trackId,
+            name: winnerName,
+            role: 'writer',
+            share_percent: 100,
+          });
+        }
+
         await db.from('audit_logs').insert({
           admin_id: adminId,
           action: 'dispute_transfer_ownership',
           entity_type: 'release',
           entity_id: releaseId,
-          changes: { new_profile_id: newOwnerId },
+          changes: { new_profile_id: newOwnerId, winner_display_name: winnerName },
         });
       }
 
