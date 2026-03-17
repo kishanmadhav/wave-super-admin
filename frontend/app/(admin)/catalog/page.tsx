@@ -44,7 +44,8 @@ interface Paged<T> {
   total: number
 }
 
-const PENDING_STATUSES = ["draft", "submitted", "under_review"]
+// Super Admin should not see drafts (drafts are user-only).
+const PENDING_STATUSES = ["submitted", "under_review"]
 const CHANGES_STATUSES = ["changes_requested"]
 const APPROVED_STATUSES = ["approved", "published"]
 const REJECTED_STATUSES = ["rejected", "takedown"]
@@ -66,8 +67,11 @@ export default function CatalogPage() {
         limit: 100,
         offset: 0,
       })
-      setReleases(res.data ?? [])
-      setTotal(res.total ?? 0)
+      const safe = (res.data ?? []).filter((r) => r.status !== "draft")
+      setReleases(safe)
+      // If backend returns totals including drafts, keep UI consistent by counting only visible items.
+      // (Backend is also updated to exclude drafts.)
+      setTotal(statusFilter === "all" ? safe.length : (res.total ?? safe.length))
     } catch (e: any) {
       toast.error(e.message ?? "Failed to load releases")
       setReleases([])
@@ -142,7 +146,6 @@ export default function CatalogPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All statuses</SelectItem>
-              <SelectItem value="draft">Draft</SelectItem>
               <SelectItem value="submitted">Submitted</SelectItem>
               <SelectItem value="under_review">Under Review</SelectItem>
               <SelectItem value="approved">Approved</SelectItem>

@@ -51,4 +51,25 @@ export class DisputesController {
       ruling: body.ruling,
     });
   }
+
+  @Patch(':id/revenue-splits')
+  @ApiOperation({ summary: 'Replace revenue splits (split_recipients) for the disputed release' })
+  updateRevenueSplits(
+    @Param('id') id: string,
+    @Body() body: { splits: Array<{ name: string; role: string; identifier?: string | null; share_percent: number }> },
+    @Request() req: any,
+  ) {
+    return this.disputesService.replaceRevenueSplits(id, req.admin.id, body?.splits ?? []);
+  }
+
+  @Patch(':id/tracks/:trackId/contributors')
+  @ApiOperation({ summary: 'Replace contributor credits/splits (contributors) for a disputed track' })
+  updateTrackContributors(
+    @Param('id') id: string,
+    @Param('trackId') trackId: string,
+    @Body() body: { contributors: Array<{ name: string; role: string; publisher?: string | null; share_percent: number }> },
+    @Request() req: any,
+  ) {
+    return this.disputesService.replaceTrackContributors(id, trackId, req.admin.id, body?.contributors ?? []);
+  }
 }

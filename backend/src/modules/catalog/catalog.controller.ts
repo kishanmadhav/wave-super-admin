@@ -70,6 +70,12 @@ export class CatalogController {
     return this.catalogService.forcePublishRelease(id, req.admin.id, body?.comment);
   }
 
+  @Post('releases/:id/permanent-delete')
+  @ApiOperation({ summary: 'Permanently delete a release and all related data' })
+  permanentDelete(@Param('id') id: string, @Body() body: { comment?: string }, @Request() req: any) {
+    return this.catalogService.permanentDeleteRelease(id, req.admin.id, body?.comment);
+  }
+
   @Get('tracks')
   @ApiOperation({ summary: 'List all tracks' })
   findTracks(

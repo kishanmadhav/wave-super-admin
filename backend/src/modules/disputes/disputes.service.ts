@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '../database/supabase.service';
 
 @Injectable()
@@ -45,6 +45,13 @@ export class DisputesService {
     const submittedBy = d.submitted_by as string | null;
     const targetType = d.target_type as string;
     const targetId = d.target_id as string;
+
+    const releaseId =
+      targetType === 'release'
+        ? targetId
+        : targetType === 'track'
+          ? await this.getReleaseIdForTrack(targetId)
+          : null;
 
     let contentOwner: { id: string; email: string; display_name: string } | null = null;
     if (targetType === 'release' && targetId) {
@@ -95,11 +102,35 @@ export class DisputesService {
     }
 
     const base = dispute as unknown as Record<string, unknown>;
+
+    // Splits and contributor credits (for edit + resolution flows)
+    const trackIds = contested_tracks.map((t) => t.id).filter(Boolean);
+    const [splitRes, contributorsRes] = await Promise.all([
+      releaseId
+        ? db
+            .from('split_recipients')
+            .select('id,release_id,name,identifier,role,share_percent,created_at')
+            .eq('release_id', releaseId)
+            .order('created_at', { ascending: true })
+        : { data: [] },
+      trackIds.length > 0
+        ? db
+            .from('contributors')
+            .select('id,track_id,name,role,publisher,share_percent,created_at')
+            .in('track_id', trackIds)
+            .order('track_id')
+            .order('created_at', { ascending: true })
+        : { data: [] },
+    ]);
+
     return {
       ...base,
       claimant,
       content_owner: contentOwner,
       contested_tracks,
+      release_id: releaseId,
+      split_recipients: (splitRes as any)?.data ?? [],
+      contributors: (contributorsRes as any)?.data ?? [],
     };
   }
 
@@ -315,5 +346,92 @@ export class DisputesService {
     }
 
     return { claimant_profile_id, content_owner_profile_id };
+  }
+
+  private normalizePercent(n: any): number {
+    const v = Number(n);
+    if (!Number.isFinite(v)) return 0;
+    return Math.max(0, Math.min(100, Math.round(v * 100) / 100));
+  }
+
+  private validatePercentTotal(rows: Array<{ share_percent: number }>, label: string) {
+    const total = rows.reduce((s, r) => s + this.normalizePercent((r as any).share_percent), 0);
+    if (Math.abs(total - 100) > 0.01) {
+      throw new BadRequestException(`${label} must total 100%. Current total: ${total}`);
+    }
+  }
+
+  private async getReleaseIdForTrack(trackId: string): Promise<string | null> {
+    const db = this.supabase.getClient();
+    const { data } = await db.from('tracks').select('release_id').eq('id', trackId).maybeSingle();
+    return (data as any)?.release_id ?? null;
+  }
+
+  /** Replace revenue splits for the dispute's release. */
+  async replaceRevenueSplits(
+    disputeId: string,
+    adminId: string,
+    splits: Array<{ name: string; role: string; identifier?: string | null; share_percent: number }>,
+  ) {
+    const releaseId = await this.getReleaseIdForDispute(disputeId);
+    if (!releaseId) throw new BadRequestException('Dispute has no release context');
+    if (!Array.isArray(splits) || splits.length === 0) throw new BadRequestException('splits are required');
+    this.validatePercentTotal(splits as any, 'Revenue splits');
+
+    const db = this.supabase.getClient();
+    await db.from('split_recipients').delete().eq('release_id', releaseId);
+    await db.from('split_recipients').insert(
+      splits.map((s) => ({
+        release_id: releaseId,
+        name: String(s.name ?? '').trim(),
+        role: String(s.role ?? '').trim(),
+        identifier: s.identifier ?? null,
+        share_percent: this.normalizePercent((s as any).share_percent),
+      })),
+    );
+    await db.from('audit_logs').insert({
+      admin_id: adminId,
+      action: 'dispute_edit_revenue_splits',
+      entity_type: 'release',
+      entity_id: releaseId,
+      changes: { dispute_id: disputeId, count: splits.length },
+    });
+    return { ok: true };
+  }
+
+  /** Replace contributor credits/splits for a track within the dispute context. */
+  async replaceTrackContributors(
+    disputeId: string,
+    trackId: string,
+    adminId: string,
+    contributors: Array<{ name: string; role: string; publisher?: string | null; share_percent: number }>,
+  ) {
+    if (!trackId) throw new BadRequestException('trackId is required');
+    const releaseId = await this.getReleaseIdForDispute(disputeId);
+    if (!releaseId) throw new BadRequestException('Dispute has no release context');
+    const trackReleaseId = await this.getReleaseIdForTrack(trackId);
+    if (!trackReleaseId || trackReleaseId !== releaseId) throw new BadRequestException('Track is not part of the disputed release');
+    if (!Array.isArray(contributors) || contributors.length === 0) throw new BadRequestException('contributors are required');
+    this.validatePercentTotal(contributors as any, 'Contributor splits');
+
+    const db = this.supabase.getClient();
+    await db.from('contributors').delete().eq('track_id', trackId);
+    await db.from('contributors').insert(
+      contributors.map((c) => ({
+        track_id: trackId,
+        name: String(c.name ?? '').trim(),
+        role: String(c.role ?? '').trim(),
+        publisher: c.publisher ?? null,
+        share_percent: this.normalizePercent((c as any).share_percent),
+      })),
+    );
+    await db.from('audit_logs').insert({
+      admin_id: adminId,
+      action: 'dispute_edit_contributors',
+      entity_type: 'track',
+      entity_id: trackId,
+      changes: { dispute_id: disputeId, count: contributors.length },
+    });
+    return { ok: true };
   }
 }

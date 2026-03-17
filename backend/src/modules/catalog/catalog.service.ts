@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { SupabaseService } from '../database/supabase.service';
 
 @Injectable()
@@ -7,12 +7,15 @@ export class CatalogService {
 
   async findReleases(opts: { search?: string; status?: string; limit?: number; offset?: number }) {
     const { search, status, limit = 50, offset = 0 } = opts;
+    // Super Admin must not see drafts (drafts are user-only).
+    if (status === 'draft') return { data: [], total: 0 };
     let q = this.supabase.getClient()
       .from('releases')
       .select('id,title,primary_artist,status,type,release_date,created_at,metadata_completeness_score', { count: 'exact' })
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
     if (search) q = q.or(`title.ilike.%${search}%,primary_artist.ilike.%${search}%`);
+    q = q.neq('status', 'draft');
     if (status) q = q.eq('status', status);
     const { data, count, error } = await q;
     if (error) throw error;
@@ -26,6 +29,9 @@ export class CatalogService {
       .eq('id', id)
       .single();
     if (error) throw error;
+    if ((release as any)?.status === 'draft') {
+      throw new ForbiddenException('Draft releases are not visible in Super Admin.');
+    }
     const tracks = (release as any).tracks ?? [];
     const trackIds = tracks.map((t: any) => t.id).filter(Boolean);
 
@@ -107,6 +113,82 @@ export class CatalogService {
 
   async forcePublishRelease(id: string, adminId: string, comment?: string) {
     return this.updateReleaseStatus(id, 'published', adminId, comment);
+  }
+
+  private parseStorageKey(key: string | null | undefined): { bucket: string; path: string } | null {
+    if (!key) return null;
+    // If it's a full URL, we can't reliably map it back to a storage path here.
+    if (/^https?:\/\//i.test(key)) return null;
+    const slash = key.indexOf('/');
+    if (slash === -1) return null;
+    return { bucket: key.slice(0, slash), path: key.slice(slash + 1) };
+  }
+
+  private async removeStorageKeys(keys: Array<string | null | undefined>) {
+    const resolved = keys
+      .map((k) => this.parseStorageKey(k))
+      .filter(Boolean) as Array<{ bucket: string; path: string }>;
+    // Best-effort deletes. We intentionally ignore errors here to ensure DB cleanup proceeds.
+    for (const { bucket, path } of resolved) {
+      try {
+        await this.supabase.getClient().storage.from(bucket).remove([path]);
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  /** Permanently remove a release everywhere (DB + storage best-effort). */
+  async permanentDeleteRelease(id: string, adminId: string, comment?: string) {
+    if (!comment || comment.trim() === '') {
+      throw new BadRequestException('comment is required');
+    }
+
+    // Load release + tracks first (for cascade deletes and storage cleanup)
+    const { data: release, error } = await this.supabase.getClient()
+      .from('releases')
+      .select('id,status,cover_art_url,tracks(id,file_url,file_name)')
+      .eq('id', id)
+      .single();
+    if (error) throw error;
+    if ((release as any)?.status === 'draft') {
+      throw new ForbiddenException('Draft releases are user-only and cannot be permanently deleted from Super Admin.');
+    }
+
+    const tracks = ((release as any).tracks ?? []) as Array<{ id: string; file_url: string | null; file_name: string | null }>;
+    const trackIds = tracks.map((t) => t.id).filter(Boolean);
+
+    // Remove storage objects best-effort (cover art + audio files)
+    await this.removeStorageKeys([
+      (release as any).cover_art_url,
+      ...tracks.map((t) => t.file_url),
+    ]);
+
+    // Delete dependent rows (best-effort; keep going even if some tables don't have rows)
+    if (trackIds.length > 0) {
+      await this.supabase.getClient().from('contributors').delete().in('track_id', trackIds);
+      // Disputes can target tracks; remove those too.
+      await this.supabase.getClient().from('disputes').delete().in('target_id', trackIds);
+    }
+    await this.supabase.getClient().from('split_recipients').delete().eq('release_id', id);
+    await this.supabase.getClient().from('assets').delete().eq('release_id', id);
+    // Disputes can target the release directly.
+    await this.supabase.getClient().from('disputes').delete().eq('target_id', id);
+    await this.supabase.getClient().from('tracks').delete().eq('release_id', id);
+    await this.supabase.getClient().from('releases').delete().eq('id', id);
+
+    // Keep an audit breadcrumb that a purge happened (does not keep the content itself).
+    await this.supabase.getClient()
+      .from('audit_logs')
+      .insert({
+        admin_id: adminId,
+        action: 'permanent_delete_release',
+        entity_type: 'release',
+        entity_id: id,
+        changes: { comment: comment.trim(), deleted_track_ids: trackIds },
+      });
+
+    return { ok: true };
   }
 
   /** Admin can update any release field (partial update) */

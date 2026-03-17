@@ -27,6 +27,8 @@ import {
   Loader2,
 } from "lucide-react"
 import { toast } from "sonner"
+import { Input } from "@/components/ui/input"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
 interface Evidence {
   id: string
@@ -99,6 +101,9 @@ interface DisputeDetail {
   claimant: Party | null
   content_owner: Party | null
   contested_tracks?: ContestedTrack[]
+  release_id?: string | null
+  split_recipients?: Array<{ id: string; release_id: string; name: string; identifier: string | null; role: string; share_percent: number }>
+  contributors?: Array<{ id: string; track_id: string; name: string; role: string; publisher: string | null; share_percent: number }>
 }
 
 function formatTime(s: number): string {
@@ -251,6 +256,10 @@ export default function DisputeReviewPage() {
   const [rulingText, setRulingText] = useState("")
   const [internalNote, setInternalNote] = useState("")
   const [saving, setSaving] = useState(false)
+  const [editingSplits, setEditingSplits] = useState(false)
+  const [editingTrackId, setEditingTrackId] = useState<string | null>(null)
+  const [localSplits, setLocalSplits] = useState<Array<{ name: string; role: string; identifier: string | null; share_percent: number }>>([])
+  const [localContrib, setLocalContrib] = useState<Record<string, Array<{ name: string; role: string; publisher: string | null; share_percent: number }>>>({})
 
   const refetch = useCallback(() => {
     if (!id) return
@@ -269,6 +278,59 @@ export default function DisputeReviewPage() {
       })
       .finally(() => setLoading(false))
   }, [id])
+
+  useEffect(() => {
+    if (!dispute) return
+    setLocalSplits((dispute.split_recipients ?? []).map((s) => ({
+      name: s.name,
+      role: s.role,
+      identifier: s.identifier ?? null,
+      share_percent: s.share_percent,
+    })))
+    const byTrack: Record<string, Array<{ name: string; role: string; publisher: string | null; share_percent: number }>> = {}
+    ;(dispute.contributors ?? []).forEach((c) => {
+      if (!byTrack[c.track_id]) byTrack[c.track_id] = []
+      byTrack[c.track_id].push({ name: c.name, role: c.role, publisher: c.publisher ?? null, share_percent: c.share_percent })
+    })
+    setLocalContrib(byTrack)
+  }, [dispute])
+
+  const sumPercent = (rows: Array<{ share_percent: number }>) => rows.reduce((s, r) => s + Number(r.share_percent || 0), 0)
+
+  async function saveRevenueSplits() {
+    if (!dispute) return
+    const total = sumPercent(localSplits)
+    if (Math.abs(total - 100) > 0.01) return toast.error(`Revenue splits must total 100%. Current total: ${total}`)
+    setSaving(true)
+    try {
+      await api.patch(`/disputes/${dispute.id}/revenue-splits`, { splits: localSplits })
+      toast.success("Revenue splits updated")
+      setEditingSplits(false)
+      refetch()
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to update splits")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function saveTrackContributors(trackId: string) {
+    if (!dispute) return
+    const rows = localContrib[trackId] ?? []
+    const total = sumPercent(rows)
+    if (Math.abs(total - 100) > 0.01) return toast.error(`Contributor splits must total 100%. Current total: ${total}`)
+    setSaving(true)
+    try {
+      await api.patch(`/disputes/${dispute.id}/tracks/${trackId}/contributors`, { contributors: rows })
+      toast.success("Contributor credits updated")
+      setEditingTrackId(null)
+      refetch()
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to update contributors")
+    } finally {
+      setSaving(false)
+    }
+  }
 
   async function submitRuling() {
     if (!id || !rulingOption) {
@@ -594,6 +656,198 @@ export default function DisputeReviewPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Fix credits & splits (publishing / composition / metadata disputes) */}
+        {dispute.release_id && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <FileText className="size-4 text-primary" /> Fix credits & splits
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Edit revenue splits and contributor credits to resolve incorrect credit and metadata disputes.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Revenue split (release)</p>
+                    <p className="text-xs text-muted-foreground">Must total 100%.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {!editingSplits ? (
+                      <Button size="sm" variant="outline" onClick={() => setEditingSplits(true)}>Edit</Button>
+                    ) : (
+                      <>
+                        <Button size="sm" variant="outline" onClick={() => { setEditingSplits(false); refetch() }} disabled={saving}>Cancel</Button>
+                        <Button size="sm" onClick={saveRevenueSplits} disabled={saving || localSplits.length === 0}>
+                          {saving ? "Saving…" : "Save"}
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-border bg-muted/20">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-border">
+                        <TableHead className="text-xs">Name</TableHead>
+                        <TableHead className="text-xs">Role</TableHead>
+                        <TableHead className="text-xs">Identifier</TableHead>
+                        <TableHead className="text-xs text-right">Share %</TableHead>
+                        {editingSplits && <TableHead className="text-xs w-10" />}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {localSplits.length === 0 ? (
+                        <TableRow className="border-border">
+                          <TableCell colSpan={editingSplits ? 5 : 4} className="text-sm text-muted-foreground py-6 text-center">
+                            No split recipients found.
+                          </TableCell>
+                        </TableRow>
+                      ) : localSplits.map((s, idx) => (
+                        <TableRow key={idx} className="border-border">
+                          <TableCell className="text-sm">
+                            {editingSplits ? (
+                              <Input value={s.name} onChange={(e) => setLocalSplits((prev) => prev.map((p, i) => i === idx ? { ...p, name: e.target.value } : p))} />
+                            ) : s.name}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {editingSplits ? (
+                              <Input value={s.role} onChange={(e) => setLocalSplits((prev) => prev.map((p, i) => i === idx ? { ...p, role: e.target.value } : p))} />
+                            ) : s.role}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {editingSplits ? (
+                              <Input value={s.identifier ?? ""} onChange={(e) => setLocalSplits((prev) => prev.map((p, i) => i === idx ? { ...p, identifier: e.target.value || null } : p))} />
+                            ) : (s.identifier ?? "—")}
+                          </TableCell>
+                          <TableCell className="text-sm text-right font-mono tabular-nums">
+                            {editingSplits ? (
+                              <Input type="number" step="0.01" value={s.share_percent} onChange={(e) => setLocalSplits((prev) => prev.map((p, i) => i === idx ? { ...p, share_percent: Number(e.target.value) } : p))} />
+                            ) : `${s.share_percent}%`}
+                          </TableCell>
+                          {editingSplits && (
+                            <TableCell className="text-right">
+                              <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setLocalSplits((prev) => prev.filter((_, i) => i !== idx))}>
+                                Remove
+                              </Button>
+                            </TableCell>
+                          )}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {editingSplits && (
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs text-muted-foreground">Total: {sumPercent(localSplits)}%</p>
+                    <Button size="sm" variant="secondary" onClick={() => setLocalSplits((prev) => [...prev, { name: "", role: "artist", identifier: null, share_percent: 0 }])}>
+                      Add recipient
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {contestedTracks.length > 0 && (
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Contributor credits (per track)</p>
+                    <p className="text-xs text-muted-foreground">Must total 100% per track.</p>
+                  </div>
+                  {contestedTracks.map((t) => {
+                    const rows = localContrib[t.id] ?? []
+                    const active = editingTrackId === t.id
+                    return (
+                      <div key={t.id} className="rounded-lg border border-border bg-muted/20 p-4 space-y-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-medium text-foreground">{t.title}</p>
+                          <div className="flex items-center gap-2">
+                            {!active ? (
+                              <Button size="sm" variant="outline" onClick={() => setEditingTrackId(t.id)}>Edit</Button>
+                            ) : (
+                              <>
+                                <Button size="sm" variant="outline" onClick={() => { setEditingTrackId(null); refetch() }} disabled={saving}>Cancel</Button>
+                                <Button size="sm" onClick={() => saveTrackContributors(t.id)} disabled={saving || rows.length === 0}>
+                                  {saving ? "Saving…" : "Save"}
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="rounded-lg border border-border bg-card">
+                          <Table>
+                            <TableHeader>
+                              <TableRow className="border-border">
+                                <TableHead className="text-xs">Name</TableHead>
+                                <TableHead className="text-xs">Role</TableHead>
+                                <TableHead className="text-xs">Publisher</TableHead>
+                                <TableHead className="text-xs text-right">Share %</TableHead>
+                                {active && <TableHead className="text-xs w-10" />}
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {rows.length === 0 ? (
+                                <TableRow className="border-border">
+                                  <TableCell colSpan={active ? 5 : 4} className="text-sm text-muted-foreground py-6 text-center">
+                                    No contributors found.
+                                  </TableCell>
+                                </TableRow>
+                              ) : rows.map((c, idx) => (
+                                <TableRow key={idx} className="border-border">
+                                  <TableCell className="text-sm">
+                                    {active ? (
+                                      <Input value={c.name} onChange={(e) => setLocalContrib((prev) => ({ ...prev, [t.id]: (prev[t.id] ?? []).map((p, i) => i === idx ? { ...p, name: e.target.value } : p) }))} />
+                                    ) : c.name}
+                                  </TableCell>
+                                  <TableCell className="text-sm">
+                                    {active ? (
+                                      <Input value={c.role} onChange={(e) => setLocalContrib((prev) => ({ ...prev, [t.id]: (prev[t.id] ?? []).map((p, i) => i === idx ? { ...p, role: e.target.value } : p) }))} />
+                                    ) : c.role}
+                                  </TableCell>
+                                  <TableCell className="text-sm">
+                                    {active ? (
+                                      <Input value={c.publisher ?? \"\"} onChange={(e) => setLocalContrib((prev) => ({ ...prev, [t.id]: (prev[t.id] ?? []).map((p, i) => i === idx ? { ...p, publisher: e.target.value || null } : p) }))} />
+                                    ) : (c.publisher ?? \"—\")}
+                                  </TableCell>
+                                  <TableCell className="text-sm text-right font-mono tabular-nums">
+                                    {active ? (
+                                      <Input type="number" step="0.01" value={c.share_percent} onChange={(e) => setLocalContrib((prev) => ({ ...prev, [t.id]: (prev[t.id] ?? []).map((p, i) => i === idx ? { ...p, share_percent: Number(e.target.value) } : p) }))} />
+                                    ) : `${c.share_percent}%`}
+                                  </TableCell>
+                                  {active && (
+                                    <TableCell className="text-right">
+                                      <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setLocalContrib((prev) => ({ ...prev, [t.id]: (prev[t.id] ?? []).filter((_, i) => i !== idx) }))}>
+                                        Remove
+                                      </Button>
+                                    </TableCell>
+                                  )}
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+
+                        {active && (
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-xs text-muted-foreground">Total: {sumPercent(rows)}%</p>
+                            <Button size="sm" variant="secondary" onClick={() => setLocalContrib((prev) => ({ ...prev, [t.id]: [...(prev[t.id] ?? []), { name: \"\", role: \"writer\", publisher: null, share_percent: 0 }] }))}>
+                              Add contributor
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Ruling / Admin actions */}
         <Card>

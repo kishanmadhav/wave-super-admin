@@ -173,7 +173,7 @@ function formatStatus(s: string) {
   return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-type ActionType = "approve" | "request_changes" | "reject" | "force_publish" | "takedown"
+type ActionType = "approve" | "request_changes" | "reject" | "force_publish" | "takedown" | "permanent_delete"
 
 function formatTime(s: number) {
   if (!Number.isFinite(s) || s < 0) return "0:00"
@@ -432,6 +432,7 @@ export default function CatalogReleaseDetailPage() {
   const [loading, setLoading] = useState(true)
   const [actionType, setActionType] = useState<ActionType | null>(null)
   const [comment, setComment] = useState("")
+  const [confirmText, setConfirmText] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [showAdditionalInfo, setShowAdditionalInfo] = useState(false)
   const [editingRelease, setEditingRelease] = useState(false)
@@ -470,6 +471,10 @@ export default function CatalogReleaseDetailPage() {
       toast.error("Comment is required for all actions")
       return
     }
+    if (actionType === "permanent_delete" && confirmText.trim().toUpperCase() !== "DELETE") {
+      toast.error("Type DELETE to confirm permanent deletion")
+      return
+    }
     setSubmitting(true)
     try {
       if (actionType === "force_publish") {
@@ -478,6 +483,11 @@ export default function CatalogReleaseDetailPage() {
       } else if (actionType === "takedown") {
         await api.post(`/catalog/releases/${id}/takedown`, { comment: comment.trim() })
         toast.success("Release taken down")
+      } else if (actionType === "permanent_delete") {
+        await api.post(`/catalog/releases/${id}/permanent-delete`, { comment: comment.trim() })
+        toast.success("Release permanently deleted")
+        router.push("/catalog")
+        return
       } else {
         const statusMap = {
           approve: "approved",
@@ -492,6 +502,7 @@ export default function CatalogReleaseDetailPage() {
       }
       setActionType(null)
       setComment("")
+      setConfirmText("")
       const updated = await api.get<ReleaseDetail>(`/catalog/releases/${id}`)
       setRelease(updated)
     } catch (e: any) {
@@ -1038,23 +1049,35 @@ export default function CatalogReleaseDetailPage() {
                   Takedown
                 </Button>
               )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-destructive hover:text-destructive border-destructive/40 hover:bg-destructive/10"
+                onClick={() => setActionType("permanent_delete")}
+              >
+                <XCircle className="size-4 mr-1.5" />
+                Delete permanently
+              </Button>
             </div>
           </CardContent>
         </Card>
 
         {/* Action confirmation modal */}
-        <Dialog open={actionType !== null} onOpenChange={() => { setActionType(null); setComment("") }}>
+        <Dialog open={actionType !== null} onOpenChange={() => { setActionType(null); setComment(""); setConfirmText("") }}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>
                 {actionType === "force_publish" && "Force publish"}
                 {actionType === "takedown" && "Takedown"}
+                {actionType === "permanent_delete" && "Delete permanently"}
                 {actionType === "approve" && "Approve"}
                 {actionType === "request_changes" && "Request changes"}
                 {actionType === "reject" && "Reject"}
               </DialogTitle>
               <DialogDescription>
-                This action will be logged. A comment is required.
+                {actionType === "permanent_delete"
+                  ? "This will permanently remove the release, tracks, splits, contributors, assets, and related disputes. This cannot be undone."
+                  : "This action will be logged. A comment is required."}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3 py-2">
@@ -1066,15 +1089,26 @@ export default function CatalogReleaseDetailPage() {
                 onChange={(e) => setComment(e.target.value)}
                 className="min-h-20"
               />
+              {actionType === "permanent_delete" && (
+                <div className="space-y-2">
+                  <Label htmlFor="confirmDelete" className="text-destructive">Type DELETE to confirm</Label>
+                  <Input
+                    id="confirmDelete"
+                    value={confirmText}
+                    onChange={(e) => setConfirmText(e.target.value)}
+                    placeholder="DELETE"
+                  />
+                </div>
+              )}
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => { setActionType(null); setComment("") }} disabled={submitting}>
+              <Button variant="outline" onClick={() => { setActionType(null); setComment(""); setConfirmText("") }} disabled={submitting}>
                 Cancel
               </Button>
               <Button
                 onClick={runAction}
-                variant={actionType === "reject" || actionType === "force_publish" || actionType === "takedown" ? "destructive" : "default"}
-                disabled={submitting || !comment.trim()}
+                variant={actionType === "reject" || actionType === "force_publish" || actionType === "takedown" || actionType === "permanent_delete" ? "destructive" : "default"}
+                disabled={submitting || !comment.trim() || (actionType === "permanent_delete" && confirmText.trim().toUpperCase() !== "DELETE")}
               >
                 {submitting ? "Saving…" : "Confirm"}
               </Button>
