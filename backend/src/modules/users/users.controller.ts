@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Patch, Post, Param, Query, Body, Request, UseGuards, HttpCode, HttpStatus,
+  Controller, Get, Patch, Post, Delete, Param, Query, Body, Request, UseGuards, HttpCode, HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { UsersService } from './users.service';
@@ -28,6 +28,48 @@ export class UsersController {
   ) {
     return this.usersService.createUser(body, req.admin.id);
   }
+
+  // ─── Mobile users (must come before :id routes) ────────────────────────────
+
+  @Get('mobile')
+  @ApiOperation({ summary: 'List all mobile app users' })
+  findAllMobileUsers(
+    @Query('search') search?: string,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+  ) {
+    return this.usersService.findAllMobileUsers({ search, limit, offset });
+  }
+
+  @Get('mobile/:id')
+  @ApiOperation({ summary: 'Get a mobile user by ID' })
+  findMobileUserById(@Param('id') id: string) {
+    return this.usersService.findMobileUserById(id);
+  }
+
+  @Post('mobile/:id/suspend')
+  @ApiOperation({ summary: 'Suspend a mobile user (disables login)' })
+  suspendMobileUser(
+    @Param('id') id: string,
+    @Body() body: { reason: string },
+    @Request() req: any,
+  ) {
+    return this.usersService.suspendMobileUser(id, body.reason ?? 'Suspended by admin', req.admin.id);
+  }
+
+  @Post('mobile/:id/unsuspend')
+  @ApiOperation({ summary: 'Unsuspend a mobile user' })
+  unsuspendMobileUser(@Param('id') id: string, @Request() req: any) {
+    return this.usersService.unsuspendMobileUser(id, req.admin.id);
+  }
+
+  @Delete('mobile/:id')
+  @ApiOperation({ summary: 'Permanently delete a mobile user' })
+  deleteMobileUser(@Param('id') id: string, @Request() req: any) {
+    return this.usersService.deleteMobileUser(id, req.admin.id);
+  }
+
+  // ─── Creator / profile users ──────────────────────────────────────────────
 
   @Get()
   @ApiOperation({ summary: 'List all platform users with optional filters' })

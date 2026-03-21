@@ -212,6 +212,68 @@ export class UsersService {
     return data ?? [];
   }
 
+  // ─── Mobile users ──────────────────────────────────────────────────────────
+
+  async findAllMobileUsers(opts: { search?: string; limit?: number; offset?: number }) {
+    const { search, limit = 50, offset = 0 } = opts;
+    let q = this.supabase.getClient()
+      .from('mobile_users')
+      .select(
+        'id,email,phone,username,profile_photo_url,taste_genres,taste_languages,onboarding_completed,onboarding_step,created_at,updated_at',
+        { count: 'exact' },
+      )
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (search) {
+      q = q.or(`email.ilike.%${search}%,username.ilike.%${search}%,phone.ilike.%${search}%`);
+    }
+
+    const { data, count, error } = await q;
+    if (error) throw error;
+    return { data: data ?? [], total: count ?? 0 };
+  }
+
+  async findMobileUserById(id: string) {
+    const { data, error } = await this.supabase.getClient()
+      .from('mobile_users')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (error && error.code !== 'PGRST116') throw error;
+    if (!data) throw new NotFoundException(`Mobile user ${id} not found`);
+    return data;
+  }
+
+  async suspendMobileUser(id: string, reason: string, adminId: string) {
+    // Disable the user in Supabase Auth (prevents login)
+    const { error: authErr } = await this.supabase.getClient().auth.admin.updateUserById(id, {
+      ban_duration: '876000h', // ~100 years
+      user_metadata: { suspended: true, suspended_reason: reason, suspended_at: new Date().toISOString() },
+    });
+    if (authErr) throw authErr;
+    await this.logAction(adminId, 'suspend_mobile_user', 'mobile_user', id);
+    return { success: true, action: 'suspended' };
+  }
+
+  async unsuspendMobileUser(id: string, adminId: string) {
+    const { error: authErr } = await this.supabase.getClient().auth.admin.updateUserById(id, {
+      ban_duration: 'none',
+      user_metadata: { suspended: false, suspended_reason: null, suspended_at: null },
+    });
+    if (authErr) throw authErr;
+    await this.logAction(adminId, 'unsuspend_mobile_user', 'mobile_user', id);
+    return { success: true, action: 'unsuspended' };
+  }
+
+  async deleteMobileUser(id: string, adminId: string) {
+    // Delete from Supabase Auth — cascades to mobile_users via FK
+    const { error: authErr } = await this.supabase.getClient().auth.admin.deleteUser(id);
+    if (authErr) throw authErr;
+    await this.logAction(adminId, 'delete_mobile_user', 'mobile_user', id);
+    return { success: true, action: 'deleted' };
+  }
+
   private async logAction(adminId: string, action: string, entityType: string, entityId: string) {
     await this.supabase.getClient()
       .from('audit_logs')

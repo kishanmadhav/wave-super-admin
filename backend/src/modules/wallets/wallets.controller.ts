@@ -10,27 +10,50 @@ import { AdminAuthGuard } from '../auth/guards';
 export class WalletsController {
   constructor(private readonly walletsService: WalletsService) {}
 
-  @Get('ledger')
-  @ApiOperation({ summary: 'Get ledger entries' })
-  getLedger(
+  @Get('summary')
+  @ApiOperation({ summary: 'Platform-wide wallet summary stats' })
+  getSummary() {
+    return this.walletsService.getSummary();
+  }
+
+  @Get('mobile')
+  @ApiOperation({ summary: 'Get mobile user wallets' })
+  getMobileWallets(
     @Query('search') search?: string,
-    @Query('source') source?: string,
-    @Query('limit')  limit?: number,
+    @Query('limit') limit?: number,
     @Query('offset') offset?: number,
   ) {
-    return this.walletsService.getLedger({ search, source, limit, offset });
+    return this.walletsService.getMobileWallets({ search, limit, offset });
   }
 
-  @Get('fan')
-  @ApiOperation({ summary: 'Get fan wallets ordered by balance' })
-  getFanWallets(@Query('limit') limit?: number, @Query('offset') offset?: number) {
-    return this.walletsService.getFanWallets({ limit, offset });
+  @Get('artist')
+  @ApiOperation({ summary: 'Get artist wallets' })
+  getArtistWallets(
+    @Query('search') search?: string,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+  ) {
+    return this.walletsService.getArtistWallets({ search, limit, offset });
   }
 
-  @Get('earnings')
-  @ApiOperation({ summary: 'Get creator earnings wallets' })
-  getEarningsWallets(@Query('limit') limit?: number, @Query('offset') offset?: number) {
-    return this.walletsService.getEarningsWallets({ limit, offset });
+  @Get('mobile/:userId/ledger')
+  @ApiOperation({ summary: 'Get ledger entries for a mobile user' })
+  getMobileWalletLedger(
+    @Param('userId') userId: string,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+  ) {
+    return this.walletsService.getMobileWalletLedger(userId, { limit, offset });
+  }
+
+  @Get('artist/:artistId/ledger')
+  @ApiOperation({ summary: 'Get ledger entries for an artist' })
+  getArtistWalletLedger(
+    @Param('artistId') artistId: string,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+  ) {
+    return this.walletsService.getArtistWalletLedger(artistId, { limit, offset });
   }
 
   @Post('adjust/:profileId')
