@@ -20,7 +20,7 @@ export class CreatorsService {
     let q = this.supabase
       .getClient()
       .from('artists')
-      .select('id, profile_id, name, handle, location, followers, created_at', {
+      .select('id, profile_id, name, handle, location, followers, verified, created_at', {
         count: 'exact',
       })
       .order('created_at', { ascending: false })
@@ -132,6 +132,12 @@ export class CreatorsService {
       if (error) throw error;
     }
 
+    // Also mark artists rows as verified
+    await this.supabase.getClient()
+      .from('artists')
+      .update({ verified: true })
+      .eq('profile_id', profileId);
+
     await this.supabase.getClient().from('audit_logs').insert({
       admin_id: adminId,
       action: 'verify_creator',
@@ -167,11 +173,133 @@ export class CreatorsService {
       .eq('id', id);
     if (error) throw error;
 
+    // Also mark artists rows as unverified
+    await this.supabase.getClient()
+      .from('artists')
+      .update({ verified: false })
+      .eq('profile_id', profileId);
+
     await this.supabase.getClient().from('audit_logs').insert({
       admin_id: adminId,
       action: 'unverify_creator',
       entity_type: 'profile',
       entity_id: profileId,
+    });
+
+    return { ok: true };
+  }
+
+  async deleteArtist(artistId: string, adminId: string) {
+    if (!artistId) throw new BadRequestException('Missing artistId');
+
+    const { data: artist, error: fetchErr } = await this.supabase
+      .getClient()
+      .from('artists')
+      .select('id, name, profile_id')
+      .eq('id', artistId)
+      .single();
+    if (fetchErr || !artist) throw new BadRequestException('Artist not found');
+
+    const { error } = await this.supabase
+      .getClient()
+      .from('artists')
+      .delete()
+      .eq('id', artistId);
+    if (error) throw error;
+
+    await this.supabase.getClient().from('audit_logs').insert({
+      admin_id: adminId,
+      action: 'delete_artist',
+      entity_type: 'artist',
+      entity_id: artistId,
+    });
+
+    return { ok: true };
+  }
+
+  async deleteLabel(labelId: string, adminId: string) {
+    if (!labelId) throw new BadRequestException('Missing labelId');
+
+    const { data: label, error: fetchErr } = await this.supabase
+      .getClient()
+      .from('label_profiles')
+      .select('id, label_name, profile_id')
+      .eq('id', labelId)
+      .single();
+    if (fetchErr || !label) throw new BadRequestException('Label not found');
+
+    const { error } = await this.supabase
+      .getClient()
+      .from('label_profiles')
+      .delete()
+      .eq('id', labelId);
+    if (error) throw error;
+
+    await this.supabase.getClient().from('audit_logs').insert({
+      admin_id: adminId,
+      action: 'delete_label',
+      entity_type: 'label_profile',
+      entity_id: labelId,
+    });
+
+    return { ok: true };
+  }
+
+  async disableArtist(artistId: string, adminId: string, reason: string) {
+    if (!artistId) throw new BadRequestException('Missing artistId');
+
+    const { data: artist, error: fetchErr } = await this.supabase
+      .getClient()
+      .from('artists')
+      .select('id, profile_id')
+      .eq('id', artistId)
+      .single();
+    if (fetchErr || !artist) throw new BadRequestException('Artist not found');
+
+    if (!artist.profile_id) throw new BadRequestException('Artist has no linked profile');
+
+    const { error } = await this.supabase
+      .getClient()
+      .from('profiles')
+      .update({ suspended_at: new Date().toISOString(), suspended_reason: reason })
+      .eq('id', artist.profile_id);
+    if (error) throw error;
+
+    await this.supabase.getClient().from('audit_logs').insert({
+      admin_id: adminId,
+      action: 'disable_artist',
+      entity_type: 'artist',
+      entity_id: artistId,
+    });
+
+    return { ok: true };
+  }
+
+  async disableLabel(labelId: string, adminId: string, reason: string) {
+    if (!labelId) throw new BadRequestException('Missing labelId');
+
+    const { data: label, error: fetchErr } = await this.supabase
+      .getClient()
+      .from('label_profiles')
+      .select('id, profile_id')
+      .eq('id', labelId)
+      .single();
+    if (fetchErr || !label) throw new BadRequestException('Label not found');
+
+    if (!label.profile_id) throw new BadRequestException('Label has no linked profile');
+
+    const { error } = await this.supabase
+      .getClient()
+      .from('profiles')
+      .update({ suspended_at: new Date().toISOString(), suspended_reason: reason })
+      .eq('id', label.profile_id);
+    if (error) throw error;
+
+    await this.supabase.getClient().from('audit_logs').insert({
+      admin_id: adminId,
+      action: 'disable_label',
+      entity_type: 'label_profile',
+      entity_id: labelId,
     });
 
     return { ok: true };

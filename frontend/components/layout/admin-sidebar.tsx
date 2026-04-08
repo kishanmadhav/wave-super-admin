@@ -11,7 +11,6 @@ import {
   Users,
   Mic2,
   Library,
-  GitPullRequest,
   AlertTriangle,
   Wallet,
   Settings2,
@@ -37,7 +36,6 @@ const navGroups = [
     label: "Content",
     items: [
       { href: "/catalog",   label: "Catalog",     icon: Library },
-      { href: "/pipelines", label: "Pipelines",   icon: GitPullRequest },
       { href: "/disputes",  label: "Disputes",    icon: AlertTriangle },
     ],
   },

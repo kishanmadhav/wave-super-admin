@@ -5,49 +5,50 @@ import { SupabaseService } from '../database/supabase.service';
 export class PipelinesService {
   constructor(private readonly supabase: SupabaseService) {}
 
-  /** Returns all creators (same set as Creators page) with verification_status for the queue */
+  /** Returns all artists from the artists table with verification status for the queue */
   async getAccountVerifications(opts: { status?: string } = {}) {
-    const { data: rows, error } = await this.supabase.getClient()
-      .from('profiles')
-      .select(
-        'id,email,username,org_name,account_type,country,created_at,' +
-        'artist_profiles(stage_name),label_profiles(label_name),artists(name)',
-      )
+    const { data: artists, error } = await this.supabase.getClient()
+      .from('artists')
+      .select('id, profile_id, name, handle, bio, location, followers, verified, created_at, profiles(email, country, account_type)')
       .order('created_at', { ascending: false })
       .limit(500);
 
     if (error) throw error;
-    const profiles = rows ?? [];
 
-    const { data: verifications } = await this.supabase.getClient()
-      .from('account_verifications')
-      .select('id,profile_id,status,risk_score,created_at')
-      .order('created_at', { ascending: false });
-
+    const profileIds = (artists ?? []).map((a: any) => a.profile_id).filter(Boolean) as string[];
     const latestByProfile: Record<string, { id: string; status: string; risk_score: number }> = {};
-    (verifications ?? []).forEach((v: any) => {
-      if (!latestByProfile[v.profile_id]) {
-        latestByProfile[v.profile_id] = { id: v.id, status: v.status, risk_score: v.risk_score ?? 0 };
-      }
-    });
 
-    const data = profiles.map((row: any) => {
-      const ap = Array.isArray(row.artist_profiles) ? row.artist_profiles[0] : row.artist_profiles;
-      const lp = Array.isArray(row.label_profiles) ? row.label_profiles[0] : row.label_profiles;
-      const art = Array.isArray(row.artists) ? row.artists[0] : row.artists;
-      const display_name =
-        art?.name ?? ap?.stage_name ?? lp?.label_name ?? row.username ?? row.org_name ?? row.email ?? row.email;
-      const ver = latestByProfile[row.id];
+    if (profileIds.length > 0) {
+      const { data: verifications } = await this.supabase.getClient()
+        .from('account_verifications')
+        .select('id,profile_id,status,risk_score,created_at')
+        .in('profile_id', profileIds)
+        .order('created_at', { ascending: false });
+
+      (verifications ?? []).forEach((v: any) => {
+        if (!latestByProfile[v.profile_id]) {
+          latestByProfile[v.profile_id] = { id: v.id, status: v.status, risk_score: v.risk_score ?? 0 };
+        }
+      });
+    }
+
+    const data = (artists ?? []).map((row: any) => {
+      const profile = row.profiles;
+      const ver = row.profile_id ? latestByProfile[row.profile_id] : undefined;
+      // Derive status: if artists.verified is true, treat as verified regardless of account_verifications
+      const status = row.verified ? 'verified' : (ver?.status ?? 'none');
       return {
-        profile_id: row.id,
+        profile_id: row.profile_id,
+        artist_id: row.id,
         account_verification_id: ver?.id ?? null,
-        display_name,
-        account_name: display_name,
-        account_type: row.account_type ?? 'artist',
-        email: row.email,
-        country: row.country ?? null,
+        display_name: row.name,
+        account_name: row.name,
+        account_type: profile?.account_type ?? 'artist',
+        email: profile?.email ?? '',
+        country: profile?.country ?? null,
         risk_score: ver?.risk_score ?? 0,
-        status: ver?.status ?? 'none',
+        status,
+        verified: row.verified ?? false,
         created_at: row.created_at,
       };
     });
@@ -76,7 +77,7 @@ export class PipelinesService {
     const [{ data: artistProfile }, { data: labelProfile }, { data: artists }, { data: verifications }, { data: releases }] = await Promise.all([
       this.supabase.getClient().from('artist_profiles').select('*').eq('profile_id', profileId).maybeSingle(),
       this.supabase.getClient().from('label_profiles').select('*').eq('profile_id', profileId).maybeSingle(),
-      this.supabase.getClient().from('artists').select('id,name,handle,bio,genres,location,profile_photo_url').eq('profile_id', profileId).limit(10),
+      this.supabase.getClient().from('artists').select('id,name,handle,bio,genres,location,profile_photo_url,verified').eq('profile_id', profileId).limit(10),
       this.supabase.getClient().from('account_verifications').select('id,status,risk_score,created_at,updated_at').eq('profile_id', profileId).order('created_at', { ascending: false }).limit(1),
       this.supabase.getClient().from('releases').select('id,title,type,status,primary_artist,release_date,created_at,tracks(id,position,title,duration_seconds,duration_text,isrc)').eq('profile_id', profileId).order('created_at', { ascending: false }).limit(100),
     ]);
@@ -169,6 +170,9 @@ export class PipelinesService {
         updated_at: new Date().toISOString(),
       });
     }
+    // Also mark artists rows as not verified
+    await client.from('artists').update({ verified: false }).eq('profile_id', profileId);
+
     await client.from('audit_logs').insert({
       admin_id: adminId,
       action: 'reject_creator',

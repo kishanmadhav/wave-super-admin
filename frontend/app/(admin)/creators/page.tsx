@@ -3,43 +3,22 @@
 import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
 import { AdminTopbar } from "@/components/layout/admin-topbar"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { formatDateTime, initials, truncate } from "@/lib/utils"
-import { Search, Download, ShieldCheck, ShieldOff, MoreHorizontal, UserX, Plus, BadgeCheck } from "lucide-react"
+import { Search, ShieldCheck, ShieldOff, MoreHorizontal, BadgeCheck, CheckCircle2, XCircle, Clock, RefreshCw, ArrowLeft, User, Building2, Mail, Globe, Disc3, Music, Trash2 } from "lucide-react"
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { toast } from "sonner"
 import { api } from "@/lib/api"
-import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
-} from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
-
-// Creator profile from GET /users (unified list)
-interface CreatorProfile {
-  id: string
-  email: string
-  username: string | null
-  org_name: string | null
-  account_type: string | null
-  country: string | null
-  created_at: string
-  deletion_pending: boolean
-  fraud_flagged: boolean | null
-  suspended_at: string | null
-  banned_at: string | null
-  display_name: string
-}
 
 interface Artist {
   id: string
@@ -49,6 +28,7 @@ interface Artist {
   followers: number
   created_at: string
   profile_id: string | null
+  verified?: boolean
   verification_status?: string
 }
 
@@ -62,374 +42,239 @@ interface LabelProfile {
   verification_status?: string
 }
 
-interface Paged<T> {
-  data: T[]
-  total: number
+interface AccountVerif {
+  profile_id: string
+  artist_id: string
+  account_verification_id: string | null
+  display_name: string
+  account_name: string
+  account_type: string
+  email: string
+  country: string | null
+  status: string
+  verified: boolean
+  created_at: string
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  active: "bg-success/15 text-success border-success/30",
-  suspended: "bg-warning/15 text-warning border-warning/30",
-  banned: "bg-destructive/15 text-destructive border-destructive/30",
-  flagged: "bg-orange-500/15 text-orange-400 border-orange-500/30",
+interface TrackRow {
+  id: string
+  position: number
+  title: string
+  duration_seconds: number | null
+  duration_text: string | null
+  isrc: string | null
 }
 
-function creatorStatus(p: CreatorProfile) {
-  if (p.banned_at) return "banned"
-  if (p.suspended_at) return "suspended"
-  if (p.fraud_flagged) return "flagged"
-  if (p.deletion_pending) return "pending deletion"
-  return "active"
+interface ReleaseRow {
+  id: string
+  title: string
+  type: string
+  status: string
+  primary_artist: string
+  release_date: string | null
+  created_at: string
+  tracks: TrackRow[]
 }
+
+interface VerificationDetail {
+  profile_id: string
+  account_verification_id: string | null
+  display_name: string
+  account_name: string
+  email: string
+  username: string | null
+  org_name: string | null
+  account_type: string
+  country: string | null
+  timezone: string | null
+  created_at: string
+  verification_status: string
+  profile: Record<string, unknown> | null
+  artist_profile: { stage_name: string | null; legal_name: string | null; primary_genre: string | null; primary_language: string | null } | null
+  label_profile: { label_name: string | null; legal_entity_name: string | null; registered_country: string | null } | null
+  artists: { id: string; name: string; handle: string; bio: string | null; genres: string[] | null; location: string | null }[]
+  releases?: ReleaseRow[]
+}
+
+type VerifStatusFilter = "all" | "pending" | "verified" | "rejected" | "none"
 
 export default function CreatorsPage() {
-  const [creators, setCreators] = useState<CreatorProfile[]>([])
-  const [total, setTotal] = useState(0)
   const [search, setSearch] = useState("")
-  const [typeFilter, setTypeFilter] = useState("all")
-  const [statusFilter, setStatusFilter] = useState("all")
-  const [loading, setLoading] = useState(true)
-  const [createOpen, setCreateOpen] = useState(false)
-  const [createEmail, setCreateEmail] = useState("")
-  const [createPassword, setCreatePassword] = useState("wave_admin")
-  const [creating, setCreating] = useState(false)
 
   const [artists, setArtists] = useState<Artist[]>([])
   const [labels, setLabels] = useState<LabelProfile[]>([])
-  const [artistsLabelsLoading, setArtistsLabelsLoading] = useState(false)
+  const [artistsLoading, setArtistsLoading] = useState(true)
+  const [labelsLoading, setLabelsLoading] = useState(true)
 
-  const loadCreators = useCallback(async () => {
-    setLoading(true)
+  // Verification queue state
+  const [accountVerifs, setAccountVerifs] = useState<AccountVerif[]>([])
+  const [verifLoading, setVerifLoading] = useState(true)
+  const [verifStatusFilter, setVerifStatusFilter] = useState<VerifStatusFilter>("all")
+  const [detailProfileId, setDetailProfileId] = useState<string | null>(null)
+  const [detail, setDetail] = useState<VerificationDetail | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [verifUpdating, setVerifUpdating] = useState(false)
+
+  const loadArtists = useCallback(async () => {
+    setArtistsLoading(true)
     try {
-      const res = await api.get<Paged<CreatorProfile>>("/users", {
-        search: search || undefined,
-        type: typeFilter !== "all" ? typeFilter : undefined,
-        status: statusFilter !== "all" ? statusFilter : undefined,
-        limit: 50,
-        offset: 0,
-      })
-      setCreators(res.data ?? [])
-      setTotal(res.total ?? 0)
-    } catch (e: any) {
-      toast.error(e.message ?? "Failed to load creators")
-      setCreators([])
-      setTotal(0)
-    }
-    setLoading(false)
-  }, [search, typeFilter, statusFilter])
-
-  useEffect(() => {
-    loadCreators()
-  }, [loadCreators])
-
-  const loadArtistsAndLabels = useCallback(async () => {
-    setArtistsLabelsLoading(true)
-    try {
-      const [a, l] = await Promise.all([
-        api.get<{ data: Artist[] }>("/creators/artists", { search: search || undefined, limit: 50, offset: 0 }),
-        api.get<{ data: LabelProfile[] }>("/creators/labels", { search: search || undefined, limit: 50, offset: 0 }),
-      ])
-      setArtists(a.data ?? [])
-      setLabels(l.data ?? [])
+      const res = await api.get<{ data: Artist[] }>("/creators/artists", { search: search || undefined, limit: 50, offset: 0 })
+      setArtists(res.data ?? [])
     } catch {
       setArtists([])
-      setLabels([])
     } finally {
-      setArtistsLabelsLoading(false)
+      setArtistsLoading(false)
     }
   }, [search])
 
-  useEffect(() => {
-    loadArtistsAndLabels()
-  }, [loadArtistsAndLabels])
-
-  async function suspendUser(id: string) {
-    const reason = prompt("Suspend reason?", "Suspended by admin") ?? ""
-    if (!reason) return
+  const loadLabels = useCallback(async () => {
+    setLabelsLoading(true)
     try {
-      await api.post(`/users/${id}/suspend`, { reason })
-      toast.success("Creator suspended")
-      loadCreators()
-    } catch (e: any) {
-      toast.error(e.message ?? "Suspend failed")
-    }
-  }
-
-  async function unsuspendUser(id: string) {
-    try {
-      await api.post(`/users/${id}/unsuspend`)
-      toast.success("Creator re-enabled")
-      loadCreators()
-    } catch (e: any) {
-      toast.error(e.message ?? "Unsuspend failed")
-    }
-  }
-
-  async function banUser(id: string) {
-    const reason = prompt("Ban reason?", "Banned by admin") ?? ""
-    if (!reason) return
-    try {
-      await api.post(`/users/${id}/ban`, { reason })
-      toast.success("Creator banned")
-      loadCreators()
-    } catch (e: any) {
-      toast.error(e.message ?? "Ban failed")
-    }
-  }
-
-  async function flagFraud(id: string) {
-    try {
-      await api.post(`/users/${id}/flag-fraud`)
-      toast.success("Creator flagged for fraud")
-      loadCreators()
-    } catch (e: any) {
-      toast.error(e.message ?? "Flag failed")
-    }
-  }
-
-  async function createUser() {
-    if (!createEmail || !createPassword) return
-    setCreating(true)
-    try {
-      await api.post("/users", { email: createEmail, password: createPassword })
-      toast.success("Creator account created")
-      setCreateOpen(false)
-      setCreateEmail("")
-      setCreatePassword("wave_admin")
-      loadCreators()
-    } catch (e: any) {
-      toast.error(e.message ?? "Create failed")
+      const res = await api.get<{ data: LabelProfile[] }>("/creators/labels", { search: search || undefined, limit: 50, offset: 0 })
+      setLabels(res.data ?? [])
+    } catch {
+      setLabels([])
     } finally {
-      setCreating(false)
+      setLabelsLoading(false)
+    }
+  }, [search])
+
+  useEffect(() => { loadArtists() }, [loadArtists])
+  useEffect(() => { loadLabels() }, [loadLabels])
+
+  // Verification queue loading
+  const loadVerifications = useCallback(async () => {
+    setVerifLoading(true)
+    try {
+      const params = verifStatusFilter !== "all" ? `?status=${verifStatusFilter}` : ""
+      const res = await api.get<{ data: AccountVerif[] }>(`/pipelines/account-verifications${params}`)
+      setAccountVerifs(res.data ?? [])
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to load queue")
+      setAccountVerifs([])
+    }
+    setVerifLoading(false)
+  }, [verifStatusFilter])
+
+  useEffect(() => { loadVerifications() }, [loadVerifications])
+
+  useEffect(() => {
+    if (!detailProfileId) {
+      setDetail(null)
+      return
+    }
+    let cancelled = false
+    setDetailLoading(true)
+    api.get<VerificationDetail>(`/pipelines/creators/${detailProfileId}`)
+      .then((data) => { if (!cancelled) setDetail(data) })
+      .catch((e: any) => {
+        if (!cancelled) {
+          toast.error(e.message ?? "Failed to load details")
+          setDetail(null)
+        }
+      })
+      .finally(() => { if (!cancelled) setDetailLoading(false) })
+    return () => { cancelled = true }
+  }, [detailProfileId])
+
+  async function approveVerification(profileId: string) {
+    setVerifUpdating(true)
+    try {
+      await api.post(`/creators/profiles/${profileId}/verify`)
+      toast.success("Verification badge awarded — creator is now verified (blue tick)")
+      setDetailProfileId(null)
+      setDetail(null)
+      loadVerifications()
+    } catch (e: any) {
+      toast.error(e.message ?? "Approve failed")
+    }
+    setVerifUpdating(false)
+  }
+
+  async function rejectVerification(profileId: string) {
+    setVerifUpdating(true)
+    try {
+      await api.post(`/pipelines/creators/${profileId}/reject`)
+      toast.success("Creator verification rejected")
+      setDetailProfileId(null)
+      setDetail(null)
+      loadVerifications()
+    } catch (e: any) {
+      toast.error(e.message ?? "Reject failed")
+    }
+    setVerifUpdating(false)
+  }
+
+  async function disableArtist(artistId: string) {
+    const reason = prompt("Disable reason?", "Disabled by admin")
+    if (!reason) return
+    try {
+      await api.post(`/creators/artists/${artistId}/disable`, { reason })
+      toast.success("Artist account disabled")
+      loadArtists()
+    } catch (e: any) {
+      toast.error(e.message ?? "Disable failed")
     }
   }
 
-  function escapeCsvCell(value: string | null | undefined): string {
-    if (value == null) return ""
-    const s = String(value)
-    if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`
-    return s
+  async function deleteArtist(artistId: string, name: string) {
+    if (!confirm(`Are you sure you want to permanently delete artist "${name}"? This cannot be undone.`)) return
+    try {
+      await api.delete(`/creators/artists/${artistId}`)
+      toast.success("Artist deleted")
+      loadArtists()
+    } catch (e: any) {
+      toast.error(e.message ?? "Delete failed")
+    }
   }
 
-  function exportCreatorsCsv() {
-    const headers = ["Display Name", "Email", "Username", "Org Name", "Account Type", "Country", "Status", "Joined"]
-    const rows = creators.map((p) => {
-      const status = creatorStatus(p)
-      return [
-        escapeCsvCell(p.display_name),
-        escapeCsvCell(p.email),
-        escapeCsvCell(p.username),
-        escapeCsvCell(p.org_name),
-        escapeCsvCell(p.account_type ?? ""),
-        escapeCsvCell(p.country),
-        escapeCsvCell(status),
-        escapeCsvCell(p.created_at ? formatDateTime(p.created_at) : ""),
-      ]
-    })
-    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\r\n")
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `creators-export-${new Date().toISOString().slice(0, 10)}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
-    toast.success(`Exported ${creators.length} creators as CSV`)
+  async function disableLabel(labelId: string) {
+    const reason = prompt("Disable reason?", "Disabled by admin")
+    if (!reason) return
+    try {
+      await api.post(`/creators/labels/${labelId}/disable`, { reason })
+      toast.success("Label account disabled")
+      loadLabels()
+    } catch (e: any) {
+      toast.error(e.message ?? "Disable failed")
+    }
+  }
+
+  async function deleteLabel(labelId: string, name: string) {
+    if (!confirm(`Are you sure you want to permanently delete label "${name}"? This cannot be undone.`)) return
+    try {
+      await api.delete(`/creators/labels/${labelId}`)
+      toast.success("Label deleted")
+      loadLabels()
+    } catch (e: any) {
+      toast.error(e.message ?? "Delete failed")
+    }
   }
 
   return (
     <div>
-      <AdminTopbar title="Creators" subtitle={`${total} creator accounts`} />
+      <AdminTopbar title="Creators" subtitle="Manage artists, labels & verification" />
       <div className="p-6 max-w-[1400px] space-y-4">
-        <Tabs defaultValue="all">
+        <Tabs defaultValue="artists">
           <div className="flex flex-wrap items-center gap-3">
             <TabsList>
-              <TabsTrigger value="all">All creators ({total})</TabsTrigger>
-              <TabsTrigger value="individuals">Individuals ({artists.length})</TabsTrigger>
+              <TabsTrigger value="artists">Artists ({artists.length})</TabsTrigger>
               <TabsTrigger value="labels">Labels ({labels.length})</TabsTrigger>
+              <TabsTrigger value="verification">Verification ({accountVerifs.length})</TabsTrigger>
             </TabsList>
-            <div className="flex flex-wrap items-center gap-3 flex-1">
-              <div className="relative flex-1 min-w-[200px] max-w-xs">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-                <Input
-                  placeholder="Search by email, username or org name…"
-                  className="pl-8 h-8 text-sm"
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                />
-              </div>
-              <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="w-36 h-8 text-sm">
-                  <SelectValue placeholder="Type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All types</SelectItem>
-                  <SelectItem value="artist">Artist</SelectItem>
-                  <SelectItem value="band">Band</SelectItem>
-                  <SelectItem value="label">Label</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-32 h-8 text-sm">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All statuses</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="suspended">Suspended</SelectItem>
-                  <SelectItem value="banned">Banned</SelectItem>
-                  <SelectItem value="flagged">Fraud flagged</SelectItem>
-                </SelectContent>
-              </Select>
-              <div className="ml-auto flex gap-2">
-                <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-                  <DialogTrigger asChild>
-                    <Button size="sm" className="gap-1.5">
-                      <Plus className="size-3.5" /> Add creator
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Create creator account</DialogTitle>
-                      <DialogDescription>
-                        Creates a Supabase auth user and a profiles row.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <div className="space-y-1.5">
-                        <Label htmlFor="new-email">Email</Label>
-                        <Input id="new-email" value={createEmail} onChange={e => setCreateEmail(e.target.value)} placeholder="user@wave.fm" />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="new-password">Password</Label>
-                        <Input id="new-password" value={createPassword} onChange={e => setCreatePassword(e.target.value)} />
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>Cancel</Button>
-                      <Button onClick={createUser} disabled={creating || !createEmail || !createPassword}>
-                        {creating ? "Creating…" : "Create"}
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={exportCreatorsCsv} disabled={loading}>
-                  <Download className="size-3.5" /> Export
-                </Button>
-              </div>
+            <div className="relative flex-1 min-w-[200px] max-w-xs">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Search artists, labels…"
+                className="pl-8 h-8 text-sm"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
             </div>
           </div>
 
-          <TabsContent value="all" className="mt-4">
-            <Card>
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/50 hover:bg-muted/50">
-                      <TableHead className="w-[min(280px,40%)]">Creator</TableHead>
-                      <TableHead className="w-[100px]">Type</TableHead>
-                      <TableHead className="w-[80px]">Country</TableHead>
-                      <TableHead className="w-[100px]">Status</TableHead>
-                      <TableHead className="w-[140px]">Joined</TableHead>
-                      <TableHead className="w-10" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {loading ? (
-                      Array.from({ length: 8 }).map((_, i) => (
-                        <TableRow key={i}>
-                          <TableCell><div className="h-5 rounded bg-muted animate-pulse w-40" /></TableCell>
-                          <TableCell><div className="h-5 rounded bg-muted animate-pulse w-16" /></TableCell>
-                          <TableCell><div className="h-5 rounded bg-muted animate-pulse w-12" /></TableCell>
-                          <TableCell><div className="h-5 rounded bg-muted animate-pulse w-16" /></TableCell>
-                          <TableCell><div className="h-5 rounded bg-muted animate-pulse w-24" /></TableCell>
-                          <TableCell />
-                        </TableRow>
-                      ))
-                    ) : creators.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="py-12 text-center text-muted-foreground text-sm">
-                          No creators found
-                        </TableCell>
-                      </TableRow>
-                    ) : creators.map((p) => {
-                      const status = creatorStatus(p)
-                      return (
-                        <TableRow key={p.id}>
-                          <TableCell className="align-middle">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <Avatar className="size-8 shrink-0">
-                                <AvatarFallback className="bg-primary/10 text-primary text-xs">
-                                  {initials(p.display_name)}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div className="min-w-0">
-                                <Link
-                                  href={`/creators/${p.id}`}
-                                  className="font-medium text-foreground hover:text-primary transition-colors block truncate"
-                                >
-                                  {truncate(p.display_name, 36)}
-                                </Link>
-                                <p className="text-xs text-muted-foreground truncate" title={p.email}>
-                                  {truncate(p.email, 40)}
-                                </p>
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="align-middle">
-                            {p.account_type ? (
-                              <Badge variant="secondary" className="text-xs capitalize">{p.account_type}</Badge>
-                            ) : <span className="text-muted-foreground">—</span>}
-                          </TableCell>
-                          <TableCell className="align-middle text-muted-foreground text-xs">{p.country ?? "—"}</TableCell>
-                          <TableCell className="align-middle">
-                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium capitalize ${STATUS_COLORS[status] ?? STATUS_COLORS.active}`}>
-                              {status}
-                            </span>
-                          </TableCell>
-                          <TableCell className="align-middle text-muted-foreground text-xs whitespace-nowrap">
-                            {formatDateTime(p.created_at)}
-                          </TableCell>
-                          <TableCell className="align-middle">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="size-8">
-                                  <MoreHorizontal className="size-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem asChild>
-                                  <Link href={`/creators/${p.id}`}>View detail</Link>
-                                </DropdownMenuItem>
-                                {status === "suspended" ? (
-                                  <DropdownMenuItem onClick={() => unsuspendUser(p.id)}>
-                                    <UserX className="mr-2 size-4" /> Re-enable
-                                  </DropdownMenuItem>
-                                ) : (
-                                  <DropdownMenuItem onClick={() => suspendUser(p.id)}>
-                                    <UserX className="mr-2 size-4" /> Suspend
-                                  </DropdownMenuItem>
-                                )}
-                                <DropdownMenuItem onClick={() => flagFraud(p.id)}>Flag fraud</DropdownMenuItem>
-                                <DropdownMenuItem
-                                  className="text-destructive focus:text-destructive"
-                                  onClick={() => banUser(p.id)}
-                                >
-                                  <ShieldOff className="mr-2 size-4" /> Ban
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="individuals" className="mt-4">
+          {/* ── Artists Tab ── */}
+          <TabsContent value="artists" className="mt-4">
             <Card>
               <CardContent className="p-0">
                 <Table>
@@ -444,7 +289,7 @@ export default function CreatorsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {artistsLabelsLoading ? (
+                    {artistsLoading ? (
                       Array.from({ length: 5 }).map((_, i) => (
                         <TableRow key={i}>
                           {Array.from({ length: 6 }).map((_, j) => (
@@ -498,7 +343,7 @@ export default function CreatorsPage() {
                               <DropdownMenuItem
                                 onClick={() => {
                                   if (!a.profile_id) return toast.error("Artist has no linked profile")
-                                  api.post(`/creators/profiles/${a.profile_id}/verify`).then(() => { toast.success("Verified"); loadCreators(); loadArtistsAndLabels() }).catch((e: any) => toast.error(e.message))
+                                  api.post(`/creators/profiles/${a.profile_id}/verify`).then(() => { toast.success("Verified"); loadArtists() }).catch((e: any) => toast.error(e.message))
                                 }}
                               >
                                 <ShieldCheck className="mr-2 size-4" />Verify
@@ -506,21 +351,23 @@ export default function CreatorsPage() {
                               <DropdownMenuItem
                                 onClick={() => {
                                   if (!a.profile_id) return toast.error("Artist has no linked profile")
-                                  api.post(`/creators/profiles/${a.profile_id}/unverify`).then(() => { toast.info("Unverified"); loadCreators(); loadArtistsAndLabels() }).catch((e: any) => toast.error(e.message))
+                                  api.post(`/creators/profiles/${a.profile_id}/unverify`).then(() => { toast.info("Unverified"); loadArtists() }).catch((e: any) => toast.error(e.message))
                                 }}
                               >
                                 <ShieldOff className="mr-2 size-4" />Unverify
                               </DropdownMenuItem>
+                              <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 className="text-warning"
-                                onClick={() => {
-                                  if (!a.profile_id) return toast.error("Artist has no linked profile")
-                                  const reason = prompt("Disable reason?", "Disabled by admin") ?? ""
-                                  if (!reason) return
-                                  api.post(`/users/${a.profile_id}/suspend`, { reason }).then(() => { toast.success("Disabled"); loadCreators(); loadArtistsAndLabels() }).catch((e: any) => toast.error(e.message))
-                                }}
+                                onClick={() => disableArtist(a.id)}
                               >
-                                <ShieldOff className="mr-2 size-4" />Disable creator
+                                <ShieldOff className="mr-2 size-4" />Disable account
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => deleteArtist(a.id, a.name)}
+                              >
+                                <Trash2 className="mr-2 size-4" />Delete artist
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -533,6 +380,7 @@ export default function CreatorsPage() {
             </Card>
           </TabsContent>
 
+          {/* ── Labels Tab ── */}
           <TabsContent value="labels" className="mt-4">
             <Card>
               <CardContent className="p-0">
@@ -542,13 +390,12 @@ export default function CreatorsPage() {
                       <TableHead>Label</TableHead>
                       <TableHead>Legal Entity</TableHead>
                       <TableHead>Country</TableHead>
-                      <TableHead>Status</TableHead>
                       <TableHead>Joined</TableHead>
                       <TableHead className="w-10" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {artistsLabelsLoading ? (
+                    {labelsLoading ? (
                       Array.from({ length: 5 }).map((_, i) => (
                         <TableRow key={i}>
                           {Array.from({ length: 6 }).map((_, j) => (
@@ -558,27 +405,15 @@ export default function CreatorsPage() {
                       ))
                     ) : labels.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="py-12 text-center text-muted-foreground text-sm">No labels found</TableCell>
+                        <TableCell colSpan={5} className="py-12 text-center text-muted-foreground text-sm">No labels found</TableCell>
                       </TableRow>
                     ) : labels.map(l => (
                       <TableRow key={l.id}>
                         <TableCell className="font-medium">
-                          <span className="inline-flex items-center gap-1.5">
-                            {l.label_name ?? "—"}
-                            {l.verification_status === "verified" && (
-                              <BadgeCheck className="size-4 shrink-0 text-blue-500" aria-label="Verified" />
-                            )}
-                          </span>
+                          {l.label_name ?? "—"}
                         </TableCell>
                         <TableCell className="text-muted-foreground text-xs">{l.legal_entity_name ?? "—"}</TableCell>
                         <TableCell className="text-muted-foreground text-xs">{l.registered_country ?? "—"}</TableCell>
-                        <TableCell>
-                          {l.verification_status === "verified" ? (
-                            <Badge variant="secondary" className="text-xs">Verified</Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-xs capitalize">{l.verification_status ?? "unverified"}</Badge>
-                          )}
-                        </TableCell>
                         <TableCell className="text-muted-foreground text-xs">{formatDateTime(l.created_at)}</TableCell>
                         <TableCell>
                           <DropdownMenu>
@@ -592,31 +427,16 @@ export default function CreatorsPage() {
                                 </DropdownMenuItem>
                               )}
                               <DropdownMenuItem
-                                onClick={() => {
-                                  if (!l.profile_id) return toast.error("Label has no linked profile")
-                                  api.post(`/creators/profiles/${l.profile_id}/verify`).then(() => { toast.success("Verified"); loadCreators(); loadArtistsAndLabels() }).catch((e: any) => toast.error(e.message))
-                                }}
-                              >
-                                <ShieldCheck className="mr-2 size-4" />Verify
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => {
-                                  if (!l.profile_id) return toast.error("Label has no linked profile")
-                                  api.post(`/creators/profiles/${l.profile_id}/unverify`).then(() => { toast.info("Unverified"); loadCreators(); loadArtistsAndLabels() }).catch((e: any) => toast.error(e.message))
-                                }}
-                              >
-                                <ShieldOff className="mr-2 size-4" />Unverify
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
                                 className="text-warning"
-                                onClick={() => {
-                                  if (!l.profile_id) return toast.error("Label has no linked profile")
-                                  const reason = prompt("Disable reason?", "Disabled by admin") ?? ""
-                                  if (!reason) return
-                                  api.post(`/users/${l.profile_id}/suspend`, { reason }).then(() => { toast.success("Disabled"); loadCreators(); loadArtistsAndLabels() }).catch((e: any) => toast.error(e.message))
-                                }}
+                                onClick={() => disableLabel(l.id)}
                               >
-                                <ShieldOff className="mr-2 size-4" />Disable creator
+                                <ShieldOff className="mr-2 size-4" />Disable account
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => deleteLabel(l.id, l.label_name ?? "this label")}
+                              >
+                                <Trash2 className="mr-2 size-4" />Delete label
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -627,6 +447,222 @@ export default function CreatorsPage() {
                 </Table>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* ── Verification Tab ── */}
+          <TabsContent value="verification" className="mt-4 space-y-4">
+            {detailProfileId && (detailLoading || detail) ? (
+              <>
+                <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground" onClick={() => { setDetailProfileId(null); setDetail(null) }}>
+                  <ArrowLeft className="size-4" /> Back to queue
+                </Button>
+                {detailLoading ? (
+                  <Card><CardContent className="p-8"><div className="h-32 bg-muted animate-pulse rounded" /></CardContent></Card>
+                ) : detail ? (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          <User className="size-5 text-primary" />
+                          Review creator — {detail.display_name}
+                        </CardTitle>
+                        <Badge className={detail.verification_status === "verified" ? "bg-primary text-primary-foreground" : "bg-muted"}>{detail.verification_status}</Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-3">
+                          <h4 className="text-sm font-semibold text-foreground">Account</h4>
+                          <dl className="space-y-2 text-sm">
+                            <div className="flex gap-2"><dt className="text-muted-foreground w-24">Name</dt><dd className="font-medium">{detail.display_name}</dd></div>
+                            <div className="flex gap-2"><dt className="text-muted-foreground w-24">Username</dt><dd>{detail.username ?? "—"}</dd></div>
+                            <div className="flex gap-2"><dt className="text-muted-foreground w-24">Org name</dt><dd>{detail.org_name ?? "—"}</dd></div>
+                            <div className="flex gap-2"><dt className="text-muted-foreground w-24">Type</dt><dd className="capitalize">{detail.account_type}</dd></div>
+                            <div className="flex gap-2"><dt className="text-muted-foreground w-24">Email</dt><dd className="flex items-center gap-1"><Mail className="size-3.5" />{detail.email}</dd></div>
+                            <div className="flex gap-2"><dt className="text-muted-foreground w-24">Country</dt><dd className="flex items-center gap-1"><Globe className="size-3.5" />{detail.country ?? "—"}</dd></div>
+                            <div className="flex gap-2"><dt className="text-muted-foreground w-24">Timezone</dt><dd>{detail.timezone ?? "—"}</dd></div>
+                            <div className="flex gap-2"><dt className="text-muted-foreground w-24">Joined</dt><dd>{formatDateTime(detail.created_at)}</dd></div>
+                            {(detail.profile as any)?.suspended_at != null && (
+                              <div className="flex gap-2"><dt className="text-muted-foreground w-24">Suspended</dt><dd className="text-warning">{formatDateTime((detail.profile as any).suspended_at)}</dd></div>
+                            )}
+                            {(detail.profile as any)?.banned_at != null && (
+                              <div className="flex gap-2"><dt className="text-muted-foreground w-24">Banned</dt><dd className="text-destructive">{formatDateTime((detail.profile as any).banned_at)}</dd></div>
+                            )}
+                            {(detail.profile as any)?.fraud_flagged && (
+                              <div className="flex gap-2"><dt className="text-muted-foreground w-24">Flagged</dt><dd className="text-destructive">Fraud flagged</dd></div>
+                            )}
+                            {(detail.profile as any)?.deletion_pending && (
+                              <div className="flex gap-2"><dt className="text-muted-foreground w-24">Deletion</dt><dd className="text-muted-foreground">Pending</dd></div>
+                            )}
+                          </dl>
+                        </div>
+                        <div className="space-y-3">
+                          {detail.artist_profile && (
+                            <>
+                              <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5"><User className="size-4" /> Artist profile</h4>
+                              <dl className="space-y-2 text-sm">
+                                <div className="flex gap-2"><dt className="text-muted-foreground w-28">Stage name</dt><dd>{detail.artist_profile.stage_name ?? "—"}</dd></div>
+                                <div className="flex gap-2"><dt className="text-muted-foreground w-28">Legal name</dt><dd>{detail.artist_profile.legal_name ?? "—"}</dd></div>
+                                <div className="flex gap-2"><dt className="text-muted-foreground w-28">Genre</dt><dd>{detail.artist_profile.primary_genre ?? "—"}</dd></div>
+                                <div className="flex gap-2"><dt className="text-muted-foreground w-28">Language</dt><dd>{detail.artist_profile.primary_language ?? "—"}</dd></div>
+                              </dl>
+                            </>
+                          )}
+                          {detail.label_profile && (
+                            <>
+                              <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5"><Building2 className="size-4" /> Label profile</h4>
+                              <dl className="space-y-2 text-sm">
+                                <div className="flex gap-2"><dt className="text-muted-foreground w-28">Label name</dt><dd>{detail.label_profile.label_name ?? "—"}</dd></div>
+                                <div className="flex gap-2"><dt className="text-muted-foreground w-28">Legal entity</dt><dd>{detail.label_profile.legal_entity_name ?? "—"}</dd></div>
+                                <div className="flex gap-2"><dt className="text-muted-foreground w-28">Country</dt><dd>{detail.label_profile.registered_country ?? "—"}</dd></div>
+                              </dl>
+                            </>
+                          )}
+                          {detail.artists && detail.artists.length > 0 && (
+                            <>
+                              <h4 className="text-sm font-semibold text-foreground">Artist entities</h4>
+                              <ul className="space-y-1 text-sm">
+                                {detail.artists.map((a) => (
+                                  <li key={a.id} className="flex items-center gap-2">
+                                    <span className="font-medium">{a.name}</span>
+                                    <span className="text-muted-foreground">@{a.handle}</span>
+                                    {a.location && <span className="text-muted-foreground text-xs">· {a.location}</span>}
+                                  </li>
+                                ))}
+                              </ul>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div className="space-y-4 pt-4 border-t border-border">
+                        <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                          <Disc3 className="size-4" /> Releases & tracks
+                        </h4>
+                        {detail.releases && detail.releases.length > 0 ? (
+                          <div className="space-y-4">
+                            {detail.releases.map((rel) => (
+                              <div key={rel.id} className="rounded-lg border border-border bg-muted/20 p-4 space-y-2">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-medium text-foreground">{rel.title}</span>
+                                  <Badge variant="outline" className="text-xs capitalize">{rel.type}</Badge>
+                                  <Badge variant="secondary" className="text-xs capitalize">{rel.status}</Badge>
+                                  {rel.release_date && (
+                                    <span className="text-xs text-muted-foreground">{rel.release_date}</span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-muted-foreground">{rel.primary_artist}</p>
+                                {rel.tracks && rel.tracks.length > 0 && (
+                                  <ul className="mt-2 space-y-1.5 pl-2 border-l-2 border-border">
+                                    {rel.tracks.map((t) => (
+                                      <li key={t.id} className="flex items-center gap-3 text-sm">
+                                        <Music className="size-3.5 text-muted-foreground shrink-0" />
+                                        <span className="font-medium min-w-0 truncate">{t.title}</span>
+                                        {(t.duration_text ?? t.duration_seconds != null) && (
+                                          <span className="text-muted-foreground text-xs shrink-0">
+                                            {t.duration_text ?? `${Math.floor((t.duration_seconds ?? 0) / 60)}:${String((t.duration_seconds ?? 0) % 60).padStart(2, "0")}`}
+                                          </span>
+                                        )}
+                                        {t.isrc && (
+                                          <span className="text-muted-foreground text-xs font-mono shrink-0">{t.isrc}</span>
+                                        )}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">No releases yet</p>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-border">
+                        <Button size="sm" className="gap-1.5" onClick={() => approveVerification(detail.profile_id)} disabled={verifUpdating || detail.verification_status === "verified"}>
+                          <ShieldCheck className="size-4" /> Award verification badge (blue tick)
+                        </Button>
+                        <Button size="sm" variant="outline" className="gap-1.5 text-destructive border-destructive/40 hover:bg-destructive/10" onClick={() => rejectVerification(detail.profile_id)} disabled={verifUpdating}>
+                          <XCircle className="size-4" /> Reject
+                        </Button>
+                        {detail.verification_status === "verified" && (
+                          <Badge className="bg-primary text-primary-foreground">Verified — blue tick will show next to artist</Badge>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="rounded-lg border border-border bg-card px-4 py-2 text-center">
+                    <p className="text-lg font-bold text-foreground">{accountVerifs.length}</p>
+                    <p className="text-[10px] text-muted-foreground">Creators in queue</p>
+                  </div>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={loadVerifications}>
+                    <RefreshCw className="size-3.5" /> Refresh
+                  </Button>
+                </div>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Creator verification</CardTitle>
+                    <p className="text-sm text-muted-foreground">Review and award the verification badge (blue tick) or reject.</p>
+                    <Tabs value={verifStatusFilter} onValueChange={(v) => setVerifStatusFilter(v as VerifStatusFilter)} className="mt-3">
+                      <TabsList className="grid w-full max-w-md grid-cols-5">
+                        <TabsTrigger value="all">All</TabsTrigger>
+                        <TabsTrigger value="pending">Pending</TabsTrigger>
+                        <TabsTrigger value="verified">Verified</TabsTrigger>
+                        <TabsTrigger value="rejected">Rejected</TabsTrigger>
+                        <TabsTrigger value="none">Not reviewed</TabsTrigger>
+                      </TabsList>
+                    </Tabs>
+                  </CardHeader>
+                  <CardContent>
+                    {verifLoading ? (
+                      <div className="space-y-3">
+                        {Array.from({ length: 4 }).map((_, i) => (
+                          <div key={i} className="h-16 bg-muted animate-pulse rounded-lg" />
+                        ))}
+                      </div>
+                    ) : accountVerifs.length === 0 ? (
+                      <div className="py-12 text-center text-muted-foreground text-sm">No creators match this filter</div>
+                    ) : (
+                      <div className="space-y-3">
+                        {accountVerifs.map((v) => (
+                          <div
+                            key={v.artist_id}
+                            className="flex items-start justify-between gap-4 p-4 rounded-lg border border-border hover:bg-muted/30 transition-colors"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-semibold text-foreground">{v.display_name}</span>
+                                <Badge variant="outline" className="text-xs capitalize">{v.account_type}</Badge>
+                                <Badge variant={v.status === "verified" ? "default" : v.status === "rejected" ? "destructive" : "outline"} className="text-xs capitalize">{v.status.replace(/_/g, " ")}</Badge>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-1">{v.email} {v.country ? `· ${v.country}` : ""}</p>
+                              <div className="flex items-center gap-3 mt-2 text-xs">
+                                <span className="flex items-center gap-1 text-muted-foreground"><Clock className="size-3" />{formatDateTime(v.created_at)}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setDetailProfileId(v.profile_id)}>
+                                Review
+                              </Button>
+                              <Button size="sm" className="gap-1.5" onClick={() => approveVerification(v.profile_id)} disabled={v.status === "verified"}>
+                                <CheckCircle2 className="size-3.5" /> Approve
+                              </Button>
+                              <Button size="sm" variant="outline" className="gap-1.5 text-destructive border-destructive/40 hover:bg-destructive/10" onClick={() => rejectVerification(v.profile_id)}>
+                                <XCircle className="size-3.5" /> Reject
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </>
+            )}
           </TabsContent>
         </Tabs>
       </div>

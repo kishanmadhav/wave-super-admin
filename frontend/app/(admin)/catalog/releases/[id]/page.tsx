@@ -157,6 +157,7 @@ const statusColors: Record<string, string> = {
   submitted: "bg-primary/15 text-primary",
   under_review: "bg-primary/15 text-primary",
   approved: "bg-success/15 text-success",
+  scheduled: "bg-blue-500/15 text-blue-500",
   published: "bg-success/15 text-success",
   changes_requested: "bg-warning/15 text-warning",
   rejected: "bg-destructive/15 text-destructive",
@@ -496,8 +497,13 @@ export default function CatalogReleaseDetailPage() {
         } as const
         const status = actionType ? statusMap[actionType] : null
         if (status) {
-          await api.patch(`/catalog/releases/${id}/status`, { status, comment: comment.trim() })
-          toast.success(`Release ${formatStatus(status)}`)
+          const result = await api.patch<ReleaseDetail>(`/catalog/releases/${id}/status`, { status, comment: comment.trim() })
+          const resultStatus = (result as any)?.status
+          if (status === "approved" && resultStatus === "scheduled") {
+            toast.success(`Release approved and scheduled for publication on ${release?.release_date ?? "the artist's release date"}`)
+          } else {
+            toast.success(`Release ${formatStatus(resultStatus ?? status)}`)
+          }
         }
       }
       setActionType(null)
@@ -1077,7 +1083,11 @@ export default function CatalogReleaseDetailPage() {
               <DialogDescription>
                 {actionType === "permanent_delete"
                   ? "This will permanently remove the release, tracks, splits, contributors, assets, and related disputes. This cannot be undone."
-                  : "This action will be logged. A comment is required."}
+                  : actionType === "approve" && release?.release_date && new Date(release.release_date) > new Date()
+                    ? `This release will be scheduled for publication on ${release.release_date}. A comment is required.`
+                    : actionType === "approve"
+                      ? "This release will be approved and published immediately. A comment is required."
+                      : "This action will be logged. A comment is required."}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3 py-2">

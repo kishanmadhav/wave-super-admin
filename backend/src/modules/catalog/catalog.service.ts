@@ -71,7 +71,30 @@ export class CatalogService {
   }
 
   async updateReleaseStatus(id: string, status: string, adminId: string, comment?: string) {
-    const updates: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
+    let finalStatus = status;
+
+    // When approving, check the release_date. If it's in the future, schedule it
+    // so the release publishes on the artist's chosen date.
+    if (status === 'approved') {
+      const { data: rel } = await this.supabase.getClient()
+        .from('releases')
+        .select('release_date')
+        .eq('id', id)
+        .single();
+      const releaseDate = (rel as any)?.release_date;
+      if (releaseDate) {
+        const releaseDateObj = new Date(releaseDate);
+        const now = new Date();
+        // Zero-out time for date-only comparison
+        releaseDateObj.setHours(0, 0, 0, 0);
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        if (releaseDateObj > today) {
+          finalStatus = 'scheduled';
+        }
+      }
+    }
+
+    const updates: Record<string, unknown> = { status: finalStatus, updated_at: new Date().toISOString() };
     if (comment != null && comment.trim() !== '') {
       updates.reviewer_comment = comment.trim();
     }
@@ -89,7 +112,7 @@ export class CatalogService {
         action: 'update_status',
         entity_type: 'release',
         entity_id: id,
-        changes: { status, comment: comment ?? null },
+        changes: { status: finalStatus, original_requested_status: status, comment: comment ?? null },
       });
     return data;
   }

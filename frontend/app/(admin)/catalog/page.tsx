@@ -22,6 +22,7 @@ const STATUS_BADGE: Record<string, string> = {
   submitted: "bg-primary/15 text-primary",
   under_review: "bg-primary/15 text-primary",
   approved: "bg-success/15 text-success",
+  scheduled: "bg-blue-500/15 text-blue-500",
   published: "bg-success/15 text-success",
   changes_requested: "bg-warning/15 text-warning",
   rejected: "bg-destructive/15 text-destructive",
@@ -47,7 +48,7 @@ interface Paged<T> {
 // Super Admin should not see drafts (drafts are user-only).
 const PENDING_STATUSES = ["submitted", "under_review"]
 const CHANGES_STATUSES = ["changes_requested"]
-const APPROVED_STATUSES = ["approved", "published"]
+const APPROVED_STATUSES = ["approved", "scheduled", "published"]
 const REJECTED_STATUSES = ["rejected", "takedown"]
 
 export default function CatalogPage() {
