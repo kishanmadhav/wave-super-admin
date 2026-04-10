@@ -231,21 +231,7 @@ export class UsersService {
 
     const { data, count, error } = await q;
     if (error) throw error;
-
-    const mobileUsers = data ?? [];
-    if (mobileUsers.length === 0) return { data: [], total: 0 };
-
-    // Exclude users who also have a creator profile (artists/labels)
-    const ids = mobileUsers.map((u: any) => u.id);
-    const { data: creatorRows } = await this.supabase.getClient()
-      .from('profiles')
-      .select('id')
-      .in('id', ids);
-
-    const creatorIds = new Set((creatorRows ?? []).map((r: any) => r.id));
-    const purelyMobile = mobileUsers.filter((u: any) => !creatorIds.has(u.id));
-
-    return { data: purelyMobile, total: (count ?? 0) - creatorIds.size };
+    return { data: data ?? [], total: count ?? 0 };
   }
 
   async findMobileUserById(id: string) {
