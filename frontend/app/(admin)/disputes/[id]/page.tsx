@@ -811,8 +811,8 @@ export default function DisputeReviewPage() {
                                   </TableCell>
                                   <TableCell className="text-sm">
                                     {active ? (
-                                      <Input value={c.publisher ?? \"\"} onChange={(e) => setLocalContrib((prev) => ({ ...prev, [t.id]: (prev[t.id] ?? []).map((p, i) => i === idx ? { ...p, publisher: e.target.value || null } : p) }))} />
-                                    ) : (c.publisher ?? \"—\")}
+                                      <Input value={c.publisher ?? ""} onChange={(e) => setLocalContrib((prev) => ({ ...prev, [t.id]: (prev[t.id] ?? []).map((p, i) => i === idx ? { ...p, publisher: e.target.value || null } : p) }))} />
+                                    ) : (c.publisher ?? "—")}
                                   </TableCell>
                                   <TableCell className="text-sm text-right font-mono tabular-nums">
                                     {active ? (
@@ -835,7 +835,7 @@ export default function DisputeReviewPage() {
                         {active && (
                           <div className="flex items-center justify-between gap-3">
                             <p className="text-xs text-muted-foreground">Total: {sumPercent(rows)}%</p>
-                            <Button size="sm" variant="secondary" onClick={() => setLocalContrib((prev) => ({ ...prev, [t.id]: [...(prev[t.id] ?? []), { name: \"\", role: \"writer\", publisher: null, share_percent: 0 }] }))}>
+                            <Button size="sm" variant="secondary" onClick={() => setLocalContrib((prev) => ({ ...prev, [t.id]: [...(prev[t.id] ?? []), { name: "", role: "writer", publisher: null, share_percent: 0 }] }))}>
                               Add contributor
                             </Button>
                           </div>
