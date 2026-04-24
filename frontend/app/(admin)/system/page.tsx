@@ -26,6 +26,7 @@ interface FeatureFlag {
 }
 interface Taxonomy {
   id: string; type: string; value: string; label: string
+  parent_id: string | null
   active: boolean; sort_order: number
 }
 
@@ -35,6 +36,10 @@ export default function SystemPage() {
   const [taxonomies, setTaxonomies] = useState<Taxonomy[]>([])
   const [loading, setLoading]     = useState(true)
   const [editingParam, setEditingParam] = useState<Record<string, string>>({})
+  const [addingToType, setAddingToType] = useState<string | null>(null)
+  const [addingSubParentId, setAddingSubParentId] = useState<string | null>(null)
+  const [newTaxLabel, setNewTaxLabel] = useState("")
+  const [newTaxType, setNewTaxType] = useState("")
 
   async function load() {
     setLoading(true)
@@ -69,6 +74,50 @@ export default function SystemPage() {
       .eq("id", flag.id)
     if (error) { toast.error("Failed to toggle"); return }
     toast.success(`${flag.key} ${!flag.enabled ? "enabled" : "disabled"}`)
+    load()
+  }
+
+  async function addTaxonomy(type: string, label: string, parentId?: string | null) {
+    const trimmed = label.trim()
+    if (!trimmed) return
+    const value = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")
+    if (!value) { toast.error("Invalid label"); return }
+    const siblings = parentId
+      ? taxonomies.filter((t) => t.type === type && t.parent_id === parentId)
+      : taxonomies.filter((t) => t.type === type && !t.parent_id)
+    const nextSortOrder = siblings.length > 0
+      ? Math.max(...siblings.map((t) => t.sort_order)) + 10
+      : 10
+    const { error } = await supabase
+      .from("sa_taxonomies")
+      .upsert(
+        { type, value, label: trimmed, parent_id: parentId ?? null, active: true, sort_order: nextSortOrder },
+        { onConflict: "type,value" },
+      )
+    if (error) { toast.error(error.message || "Failed to add"); return }
+    toast.success(`Added "${trimmed}"`)
+    setAddingToType(null)
+    setAddingSubParentId(null)
+    setNewTaxLabel("")
+    setNewTaxType("")
+    load()
+  }
+
+  async function toggleTaxonomy(t: Taxonomy) {
+    const { error } = await supabase
+      .from("sa_taxonomies")
+      .update({ active: !t.active })
+      .eq("id", t.id)
+    if (error) { toast.error("Failed to toggle"); return }
+    toast.success(`${t.label} ${!t.active ? "enabled" : "disabled"}`)
+    load()
+  }
+
+  async function deleteTaxonomy(t: Taxonomy) {
+    if (!confirm(`Delete "${t.label}"? This cannot be undone.`)) return
+    const { error } = await supabase.from("sa_taxonomies").delete().eq("id", t.id)
+    if (error) { toast.error("Failed to delete"); return }
+    toast.success(`Deleted ${t.label}`)
     load()
   }
 
@@ -195,37 +244,263 @@ export default function SystemPage() {
           <TabsContent value="tax" className="mt-4 space-y-5">
             {loading ? (
               <div className="h-48 rounded bg-secondary animate-pulse" />
-            ) : Object.entries(taxByType).length === 0 ? (
-              <Card>
-                <CardContent className="p-8 text-center text-muted-foreground text-sm">
-                  No taxonomies configured yet.
-                  <br />
-                  <Button variant="outline" size="sm" className="mt-4" onClick={() => toast.info("Add taxonomy — coming soon")}>
-                    Add taxonomy entry
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : Object.entries(taxByType).map(([type, items]) => (
-              <div key={type}>
-                <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-2 capitalize">{type.replace(/_/g, " ")}</h3>
-                <Card>
-                  <CardContent className="p-3 flex flex-wrap gap-2">
-                    {items.map(t => (
-                      <div key={t.id} className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${t.active ? "border-border text-foreground" : "border-border/40 text-muted-foreground/50"}`}>
-                        <span>{t.label}</span>
-                        {!t.active && <span className="text-[10px] text-muted-foreground">(inactive)</span>}
+            ) : (
+              <>
+                {Object.entries(taxByType).length === 0 && (
+                  <Card>
+                    <CardContent className="p-8 text-center text-muted-foreground text-sm">
+                      No taxonomies configured yet. Create a new type below to start.
+                    </CardContent>
+                  </Card>
+                )}
+                {Object.entries(taxByType)
+                  // Render sub_genre inline under genres; skip it here
+                  .filter(([type]) => type !== "sub_genre")
+                  .map(([type, items]) => (
+                  <div key={type}>
+                    <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-2 capitalize">
+                      {type.replace(/_/g, " ")}
+                    </h3>
+                    {type === "genre" ? (
+                      // Special case: show each genre with its sub-genres nested below
+                      <div className="space-y-3">
+                        {items.map((genre) => {
+                          const childSubGenres = (taxByType["sub_genre"] ?? []).filter(
+                            (s) => s.parent_id === genre.id,
+                          )
+                          return (
+                            <Card key={genre.id}>
+                              <CardContent className="p-3">
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="group flex items-center gap-2">
+                                    <span className={`text-sm font-medium ${genre.active ? "text-foreground" : "text-muted-foreground/60"}`}>
+                                      {genre.label}
+                                    </span>
+                                    {!genre.active && <span className="text-[10px] text-muted-foreground">(inactive)</span>}
+                                    <button
+                                      onClick={() => toggleTaxonomy(genre)}
+                                      className="opacity-0 group-hover:opacity-100 text-[10px] text-muted-foreground hover:text-foreground transition-opacity"
+                                      title={genre.active ? "Deactivate" : "Activate"}
+                                    >
+                                      {genre.active ? "✕" : "✓"}
+                                    </button>
+                                    <button
+                                      onClick={() => deleteTaxonomy(genre)}
+                                      className="opacity-0 group-hover:opacity-100 text-[10px] text-muted-foreground hover:text-destructive transition-opacity"
+                                      title="Delete genre"
+                                    >
+                                      🗑
+                                    </button>
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-1.5 pl-3 border-l-2 border-border">
+                                  {childSubGenres.map((sg) => (
+                                    <div
+                                      key={sg.id}
+                                      className={`group flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] ${
+                                        sg.active ? "border-border text-foreground" : "border-border/40 text-muted-foreground/50"
+                                      }`}
+                                    >
+                                      <span>{sg.label}</span>
+                                      <button
+                                        onClick={() => toggleTaxonomy(sg)}
+                                        className="opacity-0 group-hover:opacity-100 text-[9px] text-muted-foreground hover:text-foreground transition-opacity"
+                                        title={sg.active ? "Deactivate" : "Activate"}
+                                      >
+                                        {sg.active ? "✕" : "✓"}
+                                      </button>
+                                      <button
+                                        onClick={() => deleteTaxonomy(sg)}
+                                        className="opacity-0 group-hover:opacity-100 text-[9px] text-muted-foreground hover:text-destructive transition-opacity"
+                                      >
+                                        🗑
+                                      </button>
+                                    </div>
+                                  ))}
+                                  {addingSubParentId === genre.id ? (
+                                    <div className="flex items-center gap-1">
+                                      <Input
+                                        autoFocus
+                                        value={newTaxLabel}
+                                        onChange={(e) => setNewTaxLabel(e.target.value)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter") addTaxonomy("sub_genre", newTaxLabel, genre.id)
+                                          if (e.key === "Escape") { setAddingSubParentId(null); setNewTaxLabel("") }
+                                        }}
+                                        placeholder="Sub-genre"
+                                        className="h-6 text-[11px] w-28"
+                                      />
+                                      <Button
+                                        size="sm"
+                                        className="h-6 text-[11px] px-2"
+                                        onClick={() => addTaxonomy("sub_genre", newTaxLabel, genre.id)}
+                                      >
+                                        Add
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="h-6 text-[11px] px-2"
+                                        onClick={() => { setAddingSubParentId(null); setNewTaxLabel("") }}
+                                      >
+                                        ×
+                                      </Button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      className="flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+                                      onClick={() => { setAddingSubParentId(genre.id); setNewTaxLabel("") }}
+                                    >
+                                      + Sub
+                                    </button>
+                                  )}
+                                </div>
+                              </CardContent>
+                            </Card>
+                          )
+                        })}
+                        {/* Add new top-level genre */}
+                        <Card>
+                          <CardContent className="p-3">
+                            {addingToType === "genre" ? (
+                              <div className="flex items-center gap-1">
+                                <Input
+                                  autoFocus
+                                  value={newTaxLabel}
+                                  onChange={(e) => setNewTaxLabel(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") addTaxonomy("genre", newTaxLabel)
+                                    if (e.key === "Escape") { setAddingToType(null); setNewTaxLabel("") }
+                                  }}
+                                  placeholder="New genre"
+                                  className="h-7 text-xs w-40"
+                                />
+                                <Button size="sm" className="h-7 text-xs" onClick={() => addTaxonomy("genre", newTaxLabel)}>
+                                  Add
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 text-xs"
+                                  onClick={() => { setAddingToType(null); setNewTaxLabel("") }}
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                            ) : (
+                              <button
+                                className="flex items-center gap-1 rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+                                onClick={() => setAddingToType("genre")}
+                              >
+                                + Add new genre
+                              </button>
+                            )}
+                          </CardContent>
+                        </Card>
                       </div>
-                    ))}
-                    <button
-                      className="flex items-center gap-1 rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground hover:border-primary hover:text-primary transition-colors"
-                      onClick={() => toast.info("Add taxonomy value — coming soon")}
+                    ) : (
+                      <Card>
+                        <CardContent className="p-3 flex flex-wrap gap-2">
+                          {items.map(t => (
+                            <div
+                              key={t.id}
+                              className={`group flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${
+                                t.active ? "border-border text-foreground" : "border-border/40 text-muted-foreground/50"
+                              }`}
+                            >
+                              <span>{t.label}</span>
+                              {!t.active && <span className="text-[10px] text-muted-foreground">(inactive)</span>}
+                              <button
+                                onClick={() => toggleTaxonomy(t)}
+                                className="ml-1 opacity-0 group-hover:opacity-100 text-[10px] text-muted-foreground hover:text-foreground transition-opacity"
+                                title={t.active ? "Deactivate" : "Activate"}
+                              >
+                                {t.active ? "✕" : "✓"}
+                              </button>
+                              <button
+                                onClick={() => deleteTaxonomy(t)}
+                                className="opacity-0 group-hover:opacity-100 text-[10px] text-muted-foreground hover:text-destructive transition-opacity"
+                                title="Delete"
+                              >
+                                🗑
+                              </button>
+                            </div>
+                          ))}
+                          {addingToType === type ? (
+                            <div className="flex items-center gap-1">
+                              <Input
+                                autoFocus
+                                value={newTaxLabel}
+                                onChange={(e) => setNewTaxLabel(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") addTaxonomy(type, newTaxLabel)
+                                  if (e.key === "Escape") { setAddingToType(null); setNewTaxLabel("") }
+                                }}
+                                placeholder="New value"
+                                className="h-7 text-xs w-32"
+                              />
+                              <Button size="sm" className="h-7 text-xs" onClick={() => addTaxonomy(type, newTaxLabel)}>
+                                Add
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 text-xs"
+                                onClick={() => { setAddingToType(null); setNewTaxLabel("") }}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          ) : (
+                            <button
+                              className="flex items-center gap-1 rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+                              onClick={() => setAddingToType(type)}
+                            >
+                              + Add
+                            </button>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
+                ))}
+
+                {/* Add new taxonomy type */}
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Add new taxonomy type</CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex items-end gap-2">
+                    <div className="flex-1">
+                      <Label className="text-xs text-muted-foreground">Type (e.g. genre, language, mood)</Label>
+                      <Input
+                        value={newTaxType}
+                        onChange={(e) => setNewTaxType(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_"))}
+                        placeholder="new_type"
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <Button
+                      size="sm"
+                      className="h-8"
+                      disabled={!newTaxType.trim()}
+                      onClick={() => {
+                        const t = newTaxType.trim()
+                        if (!t) return
+                        if (taxByType[t]) { toast.info("That type already exists"); return }
+                        setAddingToType(t)
+                        // Insert a temporary empty group so the section appears
+                        setTaxonomies((prev) => [...prev])
+                        setNewTaxType("")
+                        toast.info(`Use the "+ Add" button above to add values to ${t}`)
+                      }}
                     >
-                      + Add
-                    </button>
+                      Create
+                    </Button>
                   </CardContent>
                 </Card>
-              </div>
-            ))}
+              </>
+            )}
           </TabsContent>
         </Tabs>
       </div>
