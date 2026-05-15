@@ -21,6 +21,12 @@ export class SupabaseService implements OnModuleInit {
   }
 
   async onModuleInit() {
+    // Skip the live connectivity probe for offline tooling (OpenAPI export,
+    // CI builds) where no real Supabase is configured.
+    if (process.env.SKIP_DB_CHECK === '1') {
+      this.logger.log('SKIP_DB_CHECK set — skipping Supabase connectivity check');
+      return;
+    }
     const { error } = await this.client.from('profiles').select('id').limit(1);
     if (error) {
       this.logger.error(`Supabase connection check failed: ${error.message}`);

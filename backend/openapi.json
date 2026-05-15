@@ -1,0 +1,2005 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/auth/me": {
+      "get": {
+        "operationId": "AuthController_getMe",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Returns admin identity"
+          },
+          "401": {
+            "description": "No / invalid token"
+          },
+          "403": {
+            "description": "Not a Wave admin"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get identity of the authenticated admin",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/users": {
+      "post": {
+        "operationId": "UsersController_createUser",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "User created"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Create a new platform user (auth + profile)",
+        "tags": [
+          "users"
+        ]
+      },
+      "get": {
+        "operationId": "UsersController_findAll",
+        "parameters": [
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "artist",
+                "band",
+                "label"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "active",
+                "suspended",
+                "banned",
+                "flagged"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "List all platform users with optional filters",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/mobile": {
+      "get": {
+        "operationId": "UsersController_findAllMobileUsers",
+        "parameters": [
+          {
+            "name": "search",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "List all mobile app users",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/mobile/{id}": {
+      "get": {
+        "operationId": "UsersController_findMobileUserById",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get a mobile user by ID",
+        "tags": [
+          "users"
+        ]
+      },
+      "delete": {
+        "operationId": "UsersController_deleteMobileUser",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Permanently delete a mobile user",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/mobile/{id}/suspend": {
+      "post": {
+        "operationId": "UsersController_suspendMobileUser",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Suspend a mobile user (disables login)",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/mobile/{id}/unsuspend": {
+      "post": {
+        "operationId": "UsersController_unsuspendMobileUser",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Unsuspend a mobile user",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/{id}": {
+      "get": {
+        "operationId": "UsersController_findById",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get full profile for a user",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/{id}/releases": {
+      "get": {
+        "operationId": "UsersController_getUserReleases",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get releases for a user",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/{id}/ledger": {
+      "get": {
+        "operationId": "UsersController_getUserLedger",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get ledger entries for a user",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/{id}/disputes": {
+      "get": {
+        "operationId": "UsersController_getUserDisputes",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get disputes submitted by a user",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/{id}/suspend": {
+      "post": {
+        "operationId": "UsersController_suspend",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User suspended"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Suspend a user account",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/{id}/unsuspend": {
+      "post": {
+        "operationId": "UsersController_unsuspend",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Remove suspension from a user account",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/{id}/ban": {
+      "post": {
+        "operationId": "UsersController_ban",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Permanently ban a user account",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/{id}/flag-fraud": {
+      "post": {
+        "operationId": "UsersController_flagFraud",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Flag a user account for fraud",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/catalog/releases": {
+      "get": {
+        "operationId": "CatalogController_findReleases",
+        "parameters": [
+          {
+            "name": "search",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "List all releases",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/catalog/releases/{id}": {
+      "get": {
+        "operationId": "CatalogController_findRelease",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get release detail with tracks",
+        "tags": [
+          "catalog"
+        ]
+      },
+      "patch": {
+        "operationId": "CatalogController_updateRelease",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Update release fields (admin edit)",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/catalog/releases/{releaseId}/tracks/{trackId}": {
+      "patch": {
+        "operationId": "CatalogController_updateTrack",
+        "parameters": [
+          {
+            "name": "releaseId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "trackId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Update track fields (admin edit)",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/catalog/releases/{id}/status": {
+      "patch": {
+        "operationId": "CatalogController_updateReleaseStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Update release status",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/catalog/releases/{id}/takedown": {
+      "post": {
+        "operationId": "CatalogController_takedown",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Emergency takedown a release",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/catalog/releases/{id}/force-publish": {
+      "post": {
+        "operationId": "CatalogController_forcePublish",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Force publish a release",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/catalog/releases/{id}/permanent-delete": {
+      "post": {
+        "operationId": "CatalogController_permanentDelete",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Permanently delete a release and all related data",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/catalog/tracks": {
+      "get": {
+        "operationId": "CatalogController_findTracks",
+        "parameters": [
+          {
+            "name": "search",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "List all tracks",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/creators/artists": {
+      "get": {
+        "operationId": "CreatorsController_listArtists",
+        "parameters": [
+          {
+            "name": "search",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "List all artists (creator entities)",
+        "tags": [
+          "creators"
+        ]
+      }
+    },
+    "/creators/labels": {
+      "get": {
+        "operationId": "CreatorsController_listLabels",
+        "parameters": [
+          {
+            "name": "search",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "List all label profiles (creator entities)",
+        "tags": [
+          "creators"
+        ]
+      }
+    },
+    "/creators/profiles/{profileId}/verify": {
+      "post": {
+        "operationId": "CreatorsController_verifyProfile",
+        "parameters": [
+          {
+            "name": "profileId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Verify a creator account (reflected in account_verifications)",
+        "tags": [
+          "creators"
+        ]
+      }
+    },
+    "/creators/profiles/{profileId}/unverify": {
+      "post": {
+        "operationId": "CreatorsController_unverifyProfile",
+        "parameters": [
+          {
+            "name": "profileId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Remove verification for a creator account",
+        "tags": [
+          "creators"
+        ]
+      }
+    },
+    "/creators/artists/{artistId}": {
+      "delete": {
+        "operationId": "CreatorsController_deleteArtist",
+        "parameters": [
+          {
+            "name": "artistId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Delete an artist record",
+        "tags": [
+          "creators"
+        ]
+      }
+    },
+    "/creators/labels/{labelId}": {
+      "delete": {
+        "operationId": "CreatorsController_deleteLabel",
+        "parameters": [
+          {
+            "name": "labelId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Delete a label profile record",
+        "tags": [
+          "creators"
+        ]
+      }
+    },
+    "/creators/artists/{artistId}/disable": {
+      "post": {
+        "operationId": "CreatorsController_disableArtist",
+        "parameters": [
+          {
+            "name": "artistId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Disable (suspend) an artist account",
+        "tags": [
+          "creators"
+        ]
+      }
+    },
+    "/creators/labels/{labelId}/disable": {
+      "post": {
+        "operationId": "CreatorsController_disableLabel",
+        "parameters": [
+          {
+            "name": "labelId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Disable (suspend) a label account",
+        "tags": [
+          "creators"
+        ]
+      }
+    },
+    "/storage/sign": {
+      "post": {
+        "operationId": "StorageController_getSignedUploadUrl",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignedUploadDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get a signed upload URL for direct-to-Supabase uploads",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
+    "/storage/sign/read": {
+      "post": {
+        "operationId": "StorageController_getSignedReadUrl",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignedReadDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get a signed read URL for a private file",
+        "tags": [
+          "storage"
+        ]
+      }
+    },
+    "/pipelines/account-verifications": {
+      "get": {
+        "operationId": "PipelinesController_getAccountVerifications",
+        "parameters": [
+          {
+            "name": "status",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get all creators (verification queue) with verification status",
+        "tags": [
+          "pipelines"
+        ]
+      }
+    },
+    "/pipelines/creators/{profileId}": {
+      "get": {
+        "operationId": "PipelinesController_getCreatorDetailForReview",
+        "parameters": [
+          {
+            "name": "profileId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get full creator detail for review",
+        "tags": [
+          "pipelines"
+        ]
+      }
+    },
+    "/pipelines/account-verifications/{id}": {
+      "patch": {
+        "operationId": "PipelinesController_updateAccountVerif",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Update verification status by account_verification id",
+        "tags": [
+          "pipelines"
+        ]
+      }
+    },
+    "/pipelines/creators/{profileId}/reject": {
+      "post": {
+        "operationId": "PipelinesController_rejectCreator",
+        "parameters": [
+          {
+            "name": "profileId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Reject creator verification",
+        "tags": [
+          "pipelines"
+        ]
+      }
+    },
+    "/disputes": {
+      "get": {
+        "operationId": "DisputesController_findAll",
+        "parameters": [
+          {
+            "name": "status",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "severity",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "List disputes with filters",
+        "tags": [
+          "disputes"
+        ]
+      }
+    },
+    "/disputes/{id}": {
+      "get": {
+        "operationId": "DisputesController_findById",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get full dispute detail (evidence, timeline, messages, notes, parties)",
+        "tags": [
+          "disputes"
+        ]
+      }
+    },
+    "/disputes/{id}/notes": {
+      "post": {
+        "operationId": "DisputesController_addNote",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Add internal admin note",
+        "tags": [
+          "disputes"
+        ]
+      }
+    },
+    "/disputes/{id}/status": {
+      "patch": {
+        "operationId": "DisputesController_updateStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Update dispute status and optionally record ruling (in_favor_claimant, in_favor_content_owner, take_down, close)",
+        "tags": [
+          "disputes"
+        ]
+      }
+    },
+    "/disputes/{id}/revenue-splits": {
+      "patch": {
+        "operationId": "DisputesController_updateRevenueSplits",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Replace revenue splits (split_recipients) for the disputed release",
+        "tags": [
+          "disputes"
+        ]
+      }
+    },
+    "/disputes/{id}/tracks/{trackId}/contributors": {
+      "patch": {
+        "operationId": "DisputesController_updateTrackContributors",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "trackId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Replace contributor credits/splits (contributors) for a disputed track",
+        "tags": [
+          "disputes"
+        ]
+      }
+    },
+    "/wallets/summary": {
+      "get": {
+        "operationId": "WalletsController_getSummary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Platform-wide wallet summary stats",
+        "tags": [
+          "wallets"
+        ]
+      }
+    },
+    "/wallets/mobile": {
+      "get": {
+        "operationId": "WalletsController_getMobileWallets",
+        "parameters": [
+          {
+            "name": "search",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get mobile user wallets",
+        "tags": [
+          "wallets"
+        ]
+      }
+    },
+    "/wallets/artist": {
+      "get": {
+        "operationId": "WalletsController_getArtistWallets",
+        "parameters": [
+          {
+            "name": "search",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get artist wallets",
+        "tags": [
+          "wallets"
+        ]
+      }
+    },
+    "/wallets/mobile/{userId}/ledger": {
+      "get": {
+        "operationId": "WalletsController_getMobileWalletLedger",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get ledger entries for a mobile user",
+        "tags": [
+          "wallets"
+        ]
+      }
+    },
+    "/wallets/artist/{artistId}/ledger": {
+      "get": {
+        "operationId": "WalletsController_getArtistWalletLedger",
+        "parameters": [
+          {
+            "name": "artistId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get ledger entries for an artist",
+        "tags": [
+          "wallets"
+        ]
+      }
+    },
+    "/wallets/adjust/{profileId}": {
+      "post": {
+        "operationId": "WalletsController_createAdjustment",
+        "parameters": [
+          {
+            "name": "profileId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Create a manual ledger adjustment for a user",
+        "tags": [
+          "wallets"
+        ]
+      }
+    },
+    "/system/parameters": {
+      "get": {
+        "operationId": "SystemController_getParameters",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "List all platform parameters",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/parameters/{id}": {
+      "patch": {
+        "operationId": "SystemController_updateParameter",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Update a platform parameter value",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/feature-flags": {
+      "get": {
+        "operationId": "SystemController_getFeatureFlags",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "List all feature flags",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/feature-flags/{id}": {
+      "patch": {
+        "operationId": "SystemController_toggleFlag",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Toggle a feature flag on or off",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/taxonomies": {
+      "get": {
+        "operationId": "SystemController_getTaxonomies",
+        "parameters": [
+          {
+            "name": "type",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "List taxonomies, optionally filtered by type",
+        "tags": [
+          "system"
+        ]
+      },
+      "post": {
+        "operationId": "SystemController_upsertTaxonomy",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Create or update a taxonomy entry",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/audit": {
+      "get": {
+        "operationId": "AuditController_findAll",
+        "parameters": [
+          {
+            "name": "action",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "entityType",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "adminId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Query audit log with optional filters",
+        "tags": [
+          "audit"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Wave Super Admin API",
+    "description": "Platform operator API — Wave Super Admin console",
+    "version": "1.0",
+    "contact": {}
+  },
+  "tags": [
+    {
+      "name": "auth",
+      "description": "Admin identity"
+    },
+    {
+      "name": "users",
+      "description": "Platform user management"
+    },
+    {
+      "name": "catalog",
+      "description": "Releases & tracks"
+    },
+    {
+      "name": "creators",
+      "description": "Creator entities (artists & labels)"
+    },
+    {
+      "name": "pipelines",
+      "description": "Verification & review queues"
+    },
+    {
+      "name": "disputes",
+      "description": "Dispute case management"
+    },
+    {
+      "name": "wallets",
+      "description": "Ledger & wallets"
+    },
+    {
+      "name": "system",
+      "description": "Platform parameters, feature flags & taxonomies"
+    },
+    {
+      "name": "audit",
+      "description": "Audit trail"
+    }
+  ],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "JWT-auth": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http",
+        "description": "Supabase-issued JWT — obtained via supabase.auth.signInWithPassword on the frontend"
+      }
+    },
+    "schemas": {
+      "SignedUploadDto": {
+        "type": "object",
+        "properties": {
+          "bucket": {
+            "type": "string",
+            "enum": [
+              "audio",
+              "images"
+            ],
+            "description": "Supabase Storage bucket name"
+          },
+          "path": {
+            "type": "string",
+            "example": "tracks/my-release-id/song.wav",
+            "description": "Object path inside the bucket (no leading slash)"
+          }
+        },
+        "required": [
+          "bucket",
+          "path"
+        ]
+      },
+      "SignedReadDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "audio/tracks/my-release-id/song.wav",
+            "description": "Full storage key: \"{bucket}/{path}\""
+          },
+          "expiresIn": {
+            "type": "number",
+            "example": 3600,
+            "description": "URL lifetime in seconds. Min 60 (1 min), max 43200 (12 h). Default 3600."
+          }
+        },
+        "required": [
+          "key"
+        ]
+      }
+    }
+  }
+}
