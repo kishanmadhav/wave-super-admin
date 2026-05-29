@@ -16,6 +16,7 @@ import {
   Settings2,
   ScrollText,
   ChevronRight,
+  Megaphone,
 } from "lucide-react"
 
 const navGroups = [
@@ -36,6 +37,7 @@ const navGroups = [
     label: "Content",
     items: [
       { href: "/catalog",   label: "Catalog",     icon: Library },
+      { href: "/ads",       label: "Ads",         icon: Megaphone },
       { href: "/disputes",  label: "Disputes",    icon: AlertTriangle },
     ],
   },

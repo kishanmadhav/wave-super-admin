@@ -13,6 +13,7 @@ import { DisputesModule } from './modules/disputes/disputes.module';
 import { WalletsModule } from './modules/wallets/wallets.module';
 import { SystemModule } from './modules/system/system.module';
 import { AuditModule } from './modules/audit/audit.module';
+import { AdsModule } from './modules/ads/ads.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { AuditModule } from './modules/audit/audit.module';
     WalletsModule,
     SystemModule,
     AuditModule,
+    AdsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
