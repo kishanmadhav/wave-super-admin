@@ -189,6 +189,174 @@ export class CreatorsService {
     return { ok: true };
   }
 
+  /** Full detail for reviewing a single artist entity (used for roster artists under labels) */
+  async getArtistDetailForReview(artistId: string) {
+    if (!artistId) throw new BadRequestException('Missing artistId');
+
+    const { data: artist, error } = await this.supabase
+      .getClient()
+      .from('artists')
+      .select('id, profile_id, name, handle, bio, genres, language, location, profile_photo_url, banner_photo_url, links, followers, verified, created_at, updated_at')
+      .eq('id', artistId)
+      .single();
+    if (error || !artist) throw new BadRequestException('Artist not found');
+
+    // Roster membership: which label(s) this artist is on
+    const { data: roster } = await this.supabase
+      .getClient()
+      .from('artist_roster')
+      .select('id, label_profile_id, name, status, invite_email, created_at, artist_profile_id, label_profiles(id, label_name, legal_entity_name, registered_country, profile_id)')
+      .eq('artist_id', artistId)
+      .order('created_at', { ascending: false });
+
+    const rosterEntries = (roster ?? []).map((r: any) => {
+      const label = Array.isArray(r.label_profiles) ? r.label_profiles[0] : r.label_profiles;
+      return {
+        roster_id: r.id,
+        label_profile_id: r.label_profile_id,
+        label_name: label?.label_name ?? null,
+        legal_entity_name: label?.legal_entity_name ?? null,
+        registered_country: label?.registered_country ?? null,
+        label_owner_profile_id: label?.profile_id ?? null,
+        status: r.status,
+        invite_email: r.invite_email,
+        claimed: !!r.artist_profile_id,
+        joined_at: r.created_at,
+      };
+    });
+
+    // Releases linked directly to this artist (via artist_id or via profile_id if claimed)
+    const { data: releasesByArtistId } = await this.supabase
+      .getClient()
+      .from('releases')
+      .select('id, title, type, status, primary_artist, release_date, created_at, profile_id, tracks(id, position, title, duration_seconds, duration_text, isrc)')
+      .eq('artist_id', artistId)
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    let releasesByProfile: any[] = [];
+    if (artist.profile_id) {
+      const { data } = await this.supabase
+        .getClient()
+        .from('releases')
+        .select('id, title, type, status, primary_artist, release_date, created_at, profile_id, tracks(id, position, title, duration_seconds, duration_text, isrc)')
+        .eq('profile_id', artist.profile_id)
+        .order('created_at', { ascending: false })
+        .limit(100);
+      releasesByProfile = data ?? [];
+    }
+
+    // Merge & dedupe by id
+    const seen = new Set<string>();
+    const releases = [...(releasesByArtistId ?? []), ...releasesByProfile]
+      .filter((r: any) => {
+        if (seen.has(r.id)) return false;
+        seen.add(r.id);
+        return true;
+      })
+      .map((r: any) => ({
+        id: r.id,
+        title: r.title,
+        type: r.type,
+        status: r.status,
+        primary_artist: r.primary_artist,
+        release_date: r.release_date,
+        created_at: r.created_at,
+        tracks: (r.tracks ?? []).sort((a: any, b: any) => (a.position ?? 0) - (b.position ?? 0)),
+      }));
+
+    // Claimed artist account details (if profile_id set)
+    let artistProfileRow: any = null;
+    let claimedProfile: any = null;
+    if (artist.profile_id) {
+      const [{ data: ap }, { data: p }] = await Promise.all([
+        this.supabase.getClient().from('artist_profiles').select('*').eq('profile_id', artist.profile_id).maybeSingle(),
+        this.supabase.getClient().from('profiles').select('id, email, username, country, timezone, created_at, suspended_at, banned_at, fraud_flagged').eq('id', artist.profile_id).maybeSingle(),
+      ]);
+      artistProfileRow = ap ?? null;
+      claimedProfile = p ?? null;
+    }
+
+    return {
+      artist_id: artist.id,
+      profile_id: artist.profile_id,
+      name: artist.name,
+      handle: artist.handle,
+      bio: artist.bio,
+      genres: artist.genres ?? [],
+      language: artist.language,
+      location: artist.location,
+      profile_photo_url: artist.profile_photo_url,
+      banner_photo_url: artist.banner_photo_url,
+      links: artist.links ?? {},
+      followers: artist.followers ?? 0,
+      verified: artist.verified ?? false,
+      created_at: artist.created_at,
+      updated_at: artist.updated_at,
+      claimed: !!artist.profile_id,
+      roster_memberships: rosterEntries,
+      artist_profile: artistProfileRow,
+      claimed_profile: claimedProfile,
+      releases,
+    };
+  }
+
+  async verifyArtist(artistId: string, adminId: string) {
+    if (!artistId) throw new BadRequestException('Missing artistId');
+
+    const { data: artist, error: fetchErr } = await this.supabase
+      .getClient()
+      .from('artists')
+      .select('id, profile_id')
+      .eq('id', artistId)
+      .single();
+    if (fetchErr || !artist) throw new BadRequestException('Artist not found');
+
+    const { error } = await this.supabase
+      .getClient()
+      .from('artists')
+      .update({ verified: true })
+      .eq('id', artistId);
+    if (error) throw error;
+
+    await this.supabase.getClient().from('audit_logs').insert({
+      admin_id: adminId,
+      action: 'verify_artist',
+      entity_type: 'artist',
+      entity_id: artistId,
+    });
+
+    return { ok: true };
+  }
+
+  async unverifyArtist(artistId: string, adminId: string) {
+    if (!artistId) throw new BadRequestException('Missing artistId');
+
+    const { data: artist, error: fetchErr } = await this.supabase
+      .getClient()
+      .from('artists')
+      .select('id, profile_id')
+      .eq('id', artistId)
+      .single();
+    if (fetchErr || !artist) throw new BadRequestException('Artist not found');
+
+    const { error } = await this.supabase
+      .getClient()
+      .from('artists')
+      .update({ verified: false })
+      .eq('id', artistId);
+    if (error) throw error;
+
+    await this.supabase.getClient().from('audit_logs').insert({
+      admin_id: adminId,
+      action: 'unverify_artist',
+      entity_type: 'artist',
+      entity_id: artistId,
+    });
+
+    return { ok: true };
+  }
+
   async deleteArtist(artistId: string, adminId: string) {
     if (!artistId) throw new BadRequestException('Missing artistId');
 

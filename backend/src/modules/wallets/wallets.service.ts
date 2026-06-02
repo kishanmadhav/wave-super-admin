@@ -148,6 +148,58 @@ export class WalletsService {
     return { data: data ?? [], total: count ?? 0 };
   }
 
+  // ── Listening emission rate ───────────────────────────────────────────────
+  // Single source of truth for the credit_listening_progress /
+  // credit_listening_play formula. Mobile reads the same row via the
+  // get_emission_rate RPC and shows it on the wallet screen.
+
+  async getEmissionRate() {
+    const { data, error } = await this.supabase.getClient()
+      .rpc('get_emission_rate');
+    if (error) throw error;
+    const row = Array.isArray(data) && data.length ? data[0] : null;
+    return {
+      nano_per_window: Number(row?.nano_per_window ?? 1),
+      window_seconds: Number(row?.window_seconds ?? 10),
+    };
+  }
+
+  async setEmissionRate(opts: { nano_per_window: number; window_seconds: number }, adminId: string | null) {
+    if (!Number.isFinite(opts.nano_per_window) || opts.nano_per_window < 0) {
+      throw new Error('nano_per_window must be a non-negative number');
+    }
+    if (!Number.isFinite(opts.window_seconds) || opts.window_seconds <= 0) {
+      throw new Error('window_seconds must be > 0');
+    }
+    // Calling the SECURITY DEFINER RPC with an admin JWT would work, but
+    // the NestJS backend uses the service-role key — bypassing the
+    // RPC's is_admin_user() check and writing the row directly is fine
+    // here because AdminAuthGuard already validated the caller.
+    const { error } = await this.supabase.getClient()
+      .from('app_settings')
+      .upsert({
+        key: 'listening_emission',
+        value: {
+          nano_per_window: Math.floor(opts.nano_per_window),
+          window_seconds: Math.floor(opts.window_seconds),
+        },
+        updated_by: adminId,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'key' });
+    if (error) throw error;
+    await this.supabase.getClient()
+      .from('audit_logs')
+      .insert({
+        admin_id: adminId,
+        action: 'update_emission_rate',
+        entity_type: 'app_setting',
+        entity_id: 'listening_emission',
+        changes: opts,
+      })
+      .then(undefined, () => { /* audit log is best-effort */ });
+    return { ok: true, ...opts };
+  }
+
   async createManualAdjustment(
     profileId: string,
     opts: {

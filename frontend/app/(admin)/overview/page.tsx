@@ -5,18 +5,18 @@ import { AdminTopbar } from "@/components/layout/admin-topbar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
 import { supabase } from "@/lib/supabase"
 import { formatNumber } from "@/lib/utils"
 import {
   Users, Disc3, AlertTriangle, ShieldCheck,
-  TrendingUp, Clock, Zap, CheckCircle2,
-  XCircle, Activity, ArrowRight, RefreshCw,
+  TrendingUp, Zap, CheckCircle2,
+  Activity, ArrowRight, RefreshCw,
 } from "lucide-react"
 import Link from "next/link"
 
 interface Stats {
-  totalProfiles: number
+  mobileUsers: number
+  creators: number
   pendingVerifications: number
   pendingReleaseReviews: number
   openDisputes: number
@@ -24,56 +24,137 @@ interface Stats {
   totalReleases: number
 }
 
-const ALERT_ITEMS = [
-  { type: "warning", msg: "Transcoding failure spike detected — 14 assets stuck", time: "3 min ago" },
-  { type: "info",    msg: "Creator verification surge: +28 submissions in 1h",      time: "12 min ago" },
-  { type: "critical",msg: "Seek spam cluster detected — 3 user sessions flagged",   time: "18 min ago" },
-  { type: "info",    msg: "Emission rate stable — 1.02 Nano/sec avg",               time: "1 hr ago" },
-]
+interface Alert {
+  type: "critical" | "warning" | "info"
+  msg: string
+  time: string
+  href?: string
+}
 
 const QUICK_ACTIONS = [
-  { label: "Approve next 5 verifications", href: "/pipelines",  icon: CheckCircle2, variant: "default" as const },
-  { label: "Export ledger (24h)",           href: "/wallets",    icon: Zap,          variant: "outline" as const },
-  { label: "View flagged sessions",         href: "/wallets",    icon: Activity,     variant: "outline" as const },
-  { label: "Post announcement",             href: "/system",     icon: TrendingUp,   variant: "outline" as const },
+  { label: "Review pending verifications", href: "/creators", icon: CheckCircle2, variant: "default" as const },
+  { label: "Review release queue",         href: "/catalog",  icon: Zap,          variant: "outline" as const },
+  { label: "Resolve open disputes",        href: "/disputes", icon: Activity,     variant: "outline" as const },
+  { label: "System settings",              href: "/system",   icon: TrendingUp,   variant: "outline" as const },
 ]
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  if (diff < 0) return "just now"
+  const mins = Math.floor(diff / 60_000)
+  if (mins < 1) return "just now"
+  if (mins < 60) return `${mins} min ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours} hr ago`
+  const days = Math.floor(hours / 24)
+  return `${days} day${days === 1 ? "" : "s"} ago`
+}
 
 export default function OverviewPage() {
   const [stats, setStats] = useState<Stats>({
-    totalProfiles: 0, pendingVerifications: 0, pendingReleaseReviews: 0,
+    mobileUsers: 0, creators: 0, pendingVerifications: 0, pendingReleaseReviews: 0,
     openDisputes: 0, activeRooms: 0, totalReleases: 0,
   })
+  const [alerts, setAlerts] = useState<Alert[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    async function load() {
-      const [profiles, verifs, releaseVerifs, disputes, rooms, releases] = await Promise.all([
-        supabase.from("profiles").select("id", { count: "exact", head: true }),
-        supabase.from("account_verifications").select("id", { count: "exact", head: true }).in("status", ["created", "submitted"]),
-        supabase.from("release_verifications").select("id", { count: "exact", head: true }).in("status", ["submitted", "maker_approved"]),
-        supabase.from("disputes").select("id", { count: "exact", head: true }).in("status", ["open", "under_review", "escalated"]),
-        supabase.from("rooms").select("id", { count: "exact", head: true }).eq("status", "live"),
-        supabase.from("releases").select("id", { count: "exact", head: true }),
-      ])
-      setStats({
-        totalProfiles: profiles.count ?? 0,
-        pendingVerifications: verifs.count ?? 0,
-        pendingReleaseReviews: releaseVerifs.count ?? 0,
-        openDisputes: disputes.count ?? 0,
-        activeRooms: rooms.count ?? 0,
-        totalReleases: releases.count ?? 0,
+  const load = async () => {
+    const [mobileUsers, creators, verifs, releaseVerifs, disputes, rooms, releases, recentVerifs, recentDisputes, recentFlagged] = await Promise.all([
+      supabase.from("mobile_users").select("id", { count: "exact", head: true }),
+      supabase.from("profiles").select("id", { count: "exact", head: true }),
+      supabase.from("account_verifications").select("id", { count: "exact", head: true }).in("status", ["created", "submitted"]),
+      supabase.from("releases").select("id", { count: "exact", head: true }).in("status", ["submitted", "under_review"]),
+      supabase.from("disputes").select("id", { count: "exact", head: true }).in("status", ["open", "under_review", "escalated"]),
+      supabase.from("rooms").select("id", { count: "exact", head: true }).eq("status", "live"),
+      supabase.from("releases").select("id", { count: "exact", head: true }).neq("status", "draft"),
+      // Recent submitted verifications (last 24h) for alerts
+      supabase.from("account_verifications")
+        .select("id,created_at")
+        .in("status", ["created", "submitted"])
+        .gte("created_at", new Date(Date.now() - 24 * 3600 * 1000).toISOString())
+        .order("created_at", { ascending: false })
+        .limit(5),
+      // Recent open disputes for alerts
+      supabase.from("disputes")
+        .select("id,created_at,status")
+        .in("status", ["open", "escalated"])
+        .order("created_at", { ascending: false })
+        .limit(5),
+      // Fraud-flagged profiles (recent)
+      supabase.from("profiles")
+        .select("id,email,username,updated_at")
+        .eq("fraud_flagged", true)
+        .order("updated_at", { ascending: false })
+        .limit(5),
+    ])
+
+    setStats({
+      mobileUsers: mobileUsers.count ?? 0,
+      creators: creators.count ?? 0,
+      pendingVerifications: verifs.count ?? 0,
+      pendingReleaseReviews: releaseVerifs.count ?? 0,
+      openDisputes: disputes.count ?? 0,
+      activeRooms: rooms.count ?? 0,
+      totalReleases: releases.count ?? 0,
+    })
+
+    // Build live operational alerts from real events
+    const nextAlerts: Alert[] = []
+    const verifCount = recentVerifs.data?.length ?? 0
+    if (verifCount > 0) {
+      const newest = recentVerifs.data![0].created_at as string
+      nextAlerts.push({
+        type: verifCount >= 5 ? "warning" : "info",
+        msg: `${verifCount} creator verification${verifCount === 1 ? "" : "s"} awaiting review`,
+        time: timeAgo(newest),
+        href: "/creators",
       })
-      setLoading(false)
     }
+    const escalatedCount = (recentDisputes.data ?? []).filter((d: any) => d.status === "escalated").length
+    if (escalatedCount > 0) {
+      const newest = (recentDisputes.data ?? []).find((d: any) => d.status === "escalated")?.created_at as string
+      nextAlerts.push({
+        type: "critical",
+        msg: `${escalatedCount} dispute${escalatedCount === 1 ? "" : "s"} escalated — immediate attention`,
+        time: timeAgo(newest),
+        href: "/disputes",
+      })
+    }
+    const openDisputeCount = (recentDisputes.data ?? []).filter((d: any) => d.status === "open").length
+    if (openDisputeCount > 0) {
+      const newest = (recentDisputes.data ?? []).find((d: any) => d.status === "open")?.created_at as string
+      nextAlerts.push({
+        type: "warning",
+        msg: `${openDisputeCount} open dispute${openDisputeCount === 1 ? "" : "s"} pending`,
+        time: timeAgo(newest),
+        href: "/disputes",
+      })
+    }
+    const flaggedCount = recentFlagged.data?.length ?? 0
+    if (flaggedCount > 0) {
+      const newest = recentFlagged.data![0].updated_at as string
+      nextAlerts.push({
+        type: "critical",
+        msg: `${flaggedCount} account${flaggedCount === 1 ? "" : "s"} flagged for fraud`,
+        time: timeAgo(newest),
+        href: "/creators",
+      })
+    }
+    setAlerts(nextAlerts)
+    setLoading(false)
+  }
+
+  useEffect(() => {
     load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const kpiCards = [
-    { label: "Total Users",            value: stats.totalProfiles,         icon: Users,       href: "/users",     delta: "+12 today" },
-    { label: "Pending Verifications",  value: stats.pendingVerifications,  icon: ShieldCheck, href: "/pipelines", delta: "needs review", urgent: stats.pendingVerifications > 0 },
-    { label: "Release Reviews",        value: stats.pendingReleaseReviews, icon: Disc3,       href: "/pipelines", delta: "in queue",    urgent: stats.pendingReleaseReviews > 0 },
-    { label: "Open Disputes",          value: stats.openDisputes,          icon: AlertTriangle, href: "/disputes", delta: "unresolved", urgent: stats.openDisputes > 0 },
-    { label: "Live Rooms",             value: stats.activeRooms,           icon: Activity,    href: "/catalog",   delta: "right now" },
+    { label: "Mobile Users",           value: stats.mobileUsers,           icon: Users,       href: "/users",     delta: "listeners" },
+    { label: "Creators",               value: stats.creators,              icon: ShieldCheck, href: "/creators",  delta: "artists & labels" },
+    { label: "Pending Verifications",  value: stats.pendingVerifications,  icon: ShieldCheck, href: "/creators",  delta: "needs review", urgent: stats.pendingVerifications > 0 },
+    { label: "Release Reviews",        value: stats.pendingReleaseReviews, icon: Disc3,       href: "/catalog",   delta: "in queue",     urgent: stats.pendingReleaseReviews > 0 },
+    { label: "Open Disputes",          value: stats.openDisputes,          icon: AlertTriangle, href: "/disputes", delta: "unresolved",  urgent: stats.openDisputes > 0 },
     { label: "Total Releases",         value: stats.totalReleases,         icon: TrendingUp,  href: "/catalog",   delta: "all time" },
   ]
 
@@ -109,28 +190,47 @@ export default function OverviewPage() {
           <div className="lg:col-span-2 space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-foreground">Operational Alerts</h2>
-              <Button variant="ghost" size="sm" className="text-xs text-muted-foreground gap-1.5">
+              <Button variant="ghost" size="sm" className="text-xs text-muted-foreground gap-1.5" onClick={() => { setLoading(true); load() }}>
                 <RefreshCw className="size-3" /> Refresh
               </Button>
             </div>
             <Card>
               <CardContent className="p-0 divide-y divide-border">
-                {ALERT_ITEMS.map((a, i) => (
-                  <div key={i} className="flex items-start gap-3 px-4 py-3">
-                    <div className={`mt-0.5 size-2 rounded-full shrink-0 ${
-                      a.type === "critical" ? "bg-destructive" :
-                      a.type === "warning"  ? "bg-warning" : "bg-primary"
-                    }`} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-foreground">{a.msg}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{a.time}</p>
-                    </div>
-                    <Badge variant="outline" className={`text-[10px] shrink-0 ${
-                      a.type === "critical" ? "border-destructive/40 text-destructive" :
-                      a.type === "warning"  ? "border-warning/40 text-warning" : ""
-                    }`}>{a.type}</Badge>
+                {loading ? (
+                  <div className="px-4 py-6 text-center text-sm text-muted-foreground">Loading alerts…</div>
+                ) : alerts.length === 0 ? (
+                  <div className="px-4 py-8 text-center">
+                    <CheckCircle2 className="size-6 text-success mx-auto mb-2" />
+                    <p className="text-sm text-foreground">All clear</p>
+                    <p className="text-xs text-muted-foreground mt-1">No operational alerts right now</p>
                   </div>
-                ))}
+                ) : (
+                  alerts.map((a, i) => {
+                    const body = (
+                      <div className="flex items-start gap-3 px-4 py-3">
+                        <div className={`mt-0.5 size-2 rounded-full shrink-0 ${
+                          a.type === "critical" ? "bg-destructive" :
+                          a.type === "warning"  ? "bg-warning" : "bg-primary"
+                        }`} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-foreground">{a.msg}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{a.time}</p>
+                        </div>
+                        <Badge variant="outline" className={`text-[10px] shrink-0 ${
+                          a.type === "critical" ? "border-destructive/40 text-destructive" :
+                          a.type === "warning"  ? "border-warning/40 text-warning" : ""
+                        }`}>{a.type}</Badge>
+                      </div>
+                    )
+                    return a.href ? (
+                      <Link key={i} href={a.href} className="block hover:bg-muted/30 transition-colors">
+                        {body}
+                      </Link>
+                    ) : (
+                      <div key={i}>{body}</div>
+                    )
+                  })
+                )}
               </CardContent>
             </Card>
           </div>

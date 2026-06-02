@@ -56,6 +56,21 @@ export class WalletsController {
     return this.walletsService.getArtistWalletLedger(artistId, { limit, offset });
   }
 
+  @Get('emission-rate')
+  @ApiOperation({ summary: 'Get the listening-credit emission rate' })
+  getEmissionRate() {
+    return this.walletsService.getEmissionRate();
+  }
+
+  @Post('emission-rate')
+  @ApiOperation({ summary: 'Update the listening-credit emission rate' })
+  setEmissionRate(
+    @Body() body: { nano_per_window: number; window_seconds: number },
+    @Request() req: any,
+  ) {
+    return this.walletsService.setEmissionRate(body, req.admin?.id ?? null);
+  }
+
   @Post('adjust/:profileId')
   @ApiOperation({ summary: 'Create a manual ledger adjustment for a user' })
   createAdjustment(

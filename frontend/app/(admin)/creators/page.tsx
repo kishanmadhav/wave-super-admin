@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { formatDateTime, initials, truncate } from "@/lib/utils"
-import { Search, ShieldCheck, ShieldOff, MoreHorizontal, BadgeCheck, CheckCircle2, XCircle, Clock, RefreshCw, ArrowLeft, User, Building2, Mail, Globe, Disc3, Music, Trash2 } from "lucide-react"
+import { Search, ShieldCheck, ShieldOff, MoreHorizontal, BadgeCheck, CheckCircle2, XCircle, Clock, RefreshCw, ArrowLeft, User, Building2, Mail, Globe, Disc3, Music, Trash2, FileText } from "lucide-react"
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { toast } from "sonner"
 import { api } from "@/lib/api"
+import { getAudioStreamUrl } from "@/lib/storage"
 
 interface Artist {
   id: string
@@ -89,11 +90,30 @@ interface VerificationDetail {
   timezone: string | null
   created_at: string
   verification_status: string
+  id_document_url: string | null
+  id_document_type: string | null
   profile: Record<string, unknown> | null
   artist_profile: { stage_name: string | null; legal_name: string | null; primary_genre: string | null; primary_language: string | null } | null
   label_profile: { label_name: string | null; legal_entity_name: string | null; registered_country: string | null } | null
   artists: { id: string; name: string; handle: string; bio: string | null; genres: string[] | null; location: string | null }[]
+  roster_artists?: RosterArtist[]
   releases?: ReleaseRow[]
+}
+
+interface RosterArtist {
+  roster_id: string
+  roster_status: string
+  invite_email: string | null
+  created_at: string
+  artist_id: string | null
+  artist_profile_id: string | null
+  name: string
+  handle: string | null
+  bio: string | null
+  genres: string[] | null
+  location: string | null
+  profile_photo_url: string | null
+  verified: boolean
 }
 
 type VerifStatusFilter = "all" | "pending" | "verified" | "rejected" | "none"
@@ -203,6 +223,42 @@ export default function CreatorsPage() {
       toast.error(e.message ?? "Reject failed")
     }
     setVerifUpdating(false)
+  }
+
+  async function viewIdDocument(key: string) {
+    try {
+      const url = await getAudioStreamUrl(key, 600)
+      window.open(url, "_blank", "noopener,noreferrer")
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to open ID document")
+    }
+  }
+
+  async function verifyRosterArtist(artistId: string) {
+    try {
+      await api.post(`/creators/artists/${artistId}/verify`)
+      toast.success("Artist verified")
+      // Reload the detail to reflect updated status
+      if (detailProfileId) {
+        const fresh = await api.get<VerificationDetail>(`/pipelines/creators/${detailProfileId}`)
+        setDetail(fresh)
+      }
+    } catch (e: any) {
+      toast.error(e.message ?? "Verify failed")
+    }
+  }
+
+  async function unverifyRosterArtist(artistId: string) {
+    try {
+      await api.post(`/creators/artists/${artistId}/unverify`)
+      toast.info("Artist unverified")
+      if (detailProfileId) {
+        const fresh = await api.get<VerificationDetail>(`/pipelines/creators/${detailProfileId}`)
+        setDetail(fresh)
+      }
+    } catch (e: any) {
+      toast.error(e.message ?? "Unverify failed")
+    }
   }
 
   async function disableArtist(artistId: string) {
@@ -534,6 +590,62 @@ export default function CreatorsPage() {
                           )}
                         </div>
                       </div>
+
+                      {detail.label_profile && detail.roster_artists && detail.roster_artists.length > 0 && (
+                        <div className="space-y-3 pt-4 border-t border-border">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                              <Building2 className="size-4" /> Roster artists under this label ({detail.roster_artists.length})
+                            </h4>
+                          </div>
+                          <p className="text-xs text-muted-foreground">Review and verify each artist on this label&apos;s roster independently.</p>
+                          <div className="space-y-2">
+                            {detail.roster_artists.map((r) => (
+                              <div key={r.roster_id} className="flex items-start justify-between gap-4 p-3 rounded-lg border border-border bg-muted/20">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-medium text-foreground inline-flex items-center gap-1.5">
+                                      {r.name}
+                                      {r.verified && <BadgeCheck className="size-4 text-blue-500" aria-label="Verified" />}
+                                    </span>
+                                    {r.handle && <span className="text-xs text-muted-foreground font-mono">@{r.handle}</span>}
+                                    <Badge variant="outline" className="text-[10px] capitalize">{r.roster_status}</Badge>
+                                    {r.verified ? (
+                                      <Badge variant="secondary" className="text-[10px] text-blue-600 border-blue-500/30">Verified</Badge>
+                                    ) : (
+                                      <Badge variant="outline" className="text-[10px]">Unverified</Badge>
+                                    )}
+                                    {!r.artist_profile_id && r.invite_email && (
+                                      <Badge variant="outline" className="text-[10px] text-muted-foreground">Invited · {r.invite_email}</Badge>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                                    {r.location && <span>{r.location}</span>}
+                                    {r.genres && r.genres.length > 0 && <span>{r.genres.slice(0, 3).join(", ")}</span>}
+                                  </div>
+                                  {r.bio && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{r.bio}</p>}
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {r.artist_id ? (
+                                    r.verified ? (
+                                      <Button size="sm" variant="outline" className="gap-1.5" onClick={() => unverifyRosterArtist(r.artist_id!)}>
+                                        <ShieldOff className="size-3.5" /> Unverify
+                                      </Button>
+                                    ) : (
+                                      <Button size="sm" className="gap-1.5" onClick={() => verifyRosterArtist(r.artist_id!)}>
+                                        <ShieldCheck className="size-3.5" /> Verify
+                                      </Button>
+                                    )
+                                  ) : (
+                                    <Badge variant="outline" className="text-[10px] text-muted-foreground">Not claimed yet</Badge>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       <div className="space-y-4 pt-4 border-t border-border">
                         <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
                           <Disc3 className="size-4" /> Releases & tracks
@@ -577,6 +689,19 @@ export default function CreatorsPage() {
                         )}
                       </div>
                       <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-border">
+                        {detail.id_document_url ? (
+                          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => viewIdDocument(detail.id_document_url!)}>
+                            <FileText className="size-4" />
+                            View ID
+                            {detail.id_document_type && (
+                              <Badge variant="secondary" className="ml-1 text-[10px] capitalize">
+                                {detail.id_document_type.replace(/_/g, " ")}
+                              </Badge>
+                            )}
+                          </Button>
+                        ) : (
+                          <Badge variant="outline" className="text-xs text-muted-foreground">No ID uploaded</Badge>
+                        )}
                         <Button size="sm" className="gap-1.5" onClick={() => approveVerification(detail.profile_id)} disabled={verifUpdating || detail.verification_status === "verified"}>
                           <ShieldCheck className="size-4" /> Award verification badge (blue tick)
                         </Button>

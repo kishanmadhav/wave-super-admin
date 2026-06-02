@@ -82,6 +82,35 @@ export class PipelinesService {
       this.supabase.getClient().from('releases').select('id,title,type,status,primary_artist,release_date,created_at,tracks(id,position,title,duration_seconds,duration_text,isrc)').eq('profile_id', profileId).order('created_at', { ascending: false }).limit(100),
     ]);
 
+    // Fetch roster artists if this profile is a label
+    let rosterArtists: any[] = [];
+    if ((labelProfile as any)?.id) {
+      const { data: roster } = await this.supabase.getClient()
+        .from('artist_roster')
+        .select('id, name, status, invite_email, created_at, artist_id, artist_profile_id, artists(id, name, handle, bio, genres, location, profile_photo_url, verified)')
+        .eq('label_profile_id', (labelProfile as any).id)
+        .order('created_at', { ascending: false });
+
+      rosterArtists = (roster ?? []).map((r: any) => {
+        const linkedArtist = Array.isArray(r.artists) ? r.artists[0] : r.artists;
+        return {
+          roster_id: r.id,
+          roster_status: r.status,
+          invite_email: r.invite_email,
+          created_at: r.created_at,
+          artist_id: linkedArtist?.id ?? r.artist_id ?? null,
+          artist_profile_id: r.artist_profile_id ?? null,
+          name: linkedArtist?.name ?? r.name,
+          handle: linkedArtist?.handle ?? null,
+          bio: linkedArtist?.bio ?? null,
+          genres: linkedArtist?.genres ?? null,
+          location: linkedArtist?.location ?? null,
+          profile_photo_url: linkedArtist?.profile_photo_url ?? null,
+          verified: linkedArtist?.verified ?? false,
+        };
+      });
+    }
+
     const latestVerification = Array.isArray(verifications) && verifications.length > 0 ? verifications[0] : null;
     const display_name =
       (artists ?? [])[0]?.name ??
@@ -105,10 +134,13 @@ export class PipelinesService {
       created_at: profile.created_at,
       verification_status: (latestVerification as any)?.status ?? 'none',
       risk_score: (latestVerification as any)?.risk_score ?? 0,
+      id_document_url: (profile as any)?.id_document_url ?? null,
+      id_document_type: (profile as any)?.id_document_type ?? null,
       profile: profile,
       artist_profile: artistProfile ?? null,
       label_profile: labelProfile ?? null,
       artists: artists ?? [],
+      roster_artists: rosterArtists,
       releases: (releases ?? []).map((r: any) => ({
         id: r.id,
         title: r.title,

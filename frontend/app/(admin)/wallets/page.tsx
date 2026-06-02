@@ -336,16 +336,57 @@ function ArtistDetailSheet({
 // ─── Emission rate card ───────────────────────────────────────────────────────
 
 function EmissionRateCard() {
-  const [streamRate, setStreamRate] = useState(0.05)
-  const [adRate, setAdRate] = useState(0.02)
+  // Live values, loaded once on mount from the backend. The backend reads
+  // from app_settings.listening_emission and is the same source the
+  // mobile app's credit_listening_progress / credit_listening_play RPCs
+  // pull from. Ad emission is NOT configured here — those are managed
+  // per-ad in the Ads section.
+  const [nanoPerWindow, setNanoPerWindow] = useState<number>(1)
+  const [windowSeconds, setWindowSeconds] = useState<number>(10)
+  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
-  const handleSave = () => {
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await api.get<{ nano_per_window: number; window_seconds: number }>(
+          "/wallets/emission-rate",
+        )
+        setNanoPerWindow(Number(r.nano_per_window))
+        setWindowSeconds(Number(r.window_seconds))
+      } catch (err: any) {
+        toast.error(`Failed to load emission rate: ${err.message ?? err}`)
+      } finally {
+        setLoading(false)
+      }
+    })()
+  }, [])
+
+  const handleSave = async () => {
+    const n = Math.floor(Number(nanoPerWindow))
+    const w = Math.floor(Number(windowSeconds))
+    if (!Number.isFinite(n) || n < 0) {
+      toast.error("Nano amount must be a non-negative whole number")
+      return
+    }
+    if (!Number.isFinite(w) || w <= 0) {
+      toast.error("Seconds must be a positive whole number")
+      return
+    }
     setSaving(true)
-    setTimeout(() => {
+    try {
+      await api.post("/wallets/emission-rate", {
+        nano_per_window: n,
+        window_seconds: w,
+      })
+      setNanoPerWindow(n)
+      setWindowSeconds(w)
+      toast.success(`Emission rate updated: ${n} Nano per ${w}s`)
+    } catch (err: any) {
+      toast.error(`Update failed: ${err.message ?? err}`)
+    } finally {
       setSaving(false)
-      toast.success("Emission rates updated (demo — not persisted)")
-    }, 400)
+    }
   }
 
   return (
@@ -355,38 +396,54 @@ function EmissionRateCard() {
           <Gauge className="size-4 text-muted-foreground" />
           <CardTitle className="text-sm">Emission rate</CardTitle>
         </div>
-        <CardDescription>NanoWave issued per qualified stream or ad listen.</CardDescription>
+        <CardDescription>
+          Nano credited to listeners for every qualifying stream. The mobile
+          app reads this live — ad rewards are configured per-ad in the Ads
+          section.
+        </CardDescription>
       </CardHeader>
       <CardContent className="px-4 pb-4 space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="emission-stream" className="text-xs">Per qualified stream (NanoWave)</Label>
+            <Label htmlFor="emission-nano" className="text-xs">Nano per window</Label>
             <Input
-              id="emission-stream"
+              id="emission-nano"
               type="number"
               min={0}
-              max={1}
-              step={0.01}
+              step={1}
+              disabled={loading}
               className="h-8 font-mono text-sm max-w-[140px]"
-              value={streamRate}
-              onChange={(e) => setStreamRate(parseFloat(e.target.value) || 0)}
+              value={nanoPerWindow}
+              onChange={(e) => setNanoPerWindow(parseInt(e.target.value, 10) || 0)}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="emission-ad" className="text-xs">Per ad listen (NanoWave)</Label>
+            <Label htmlFor="emission-seconds" className="text-xs">Window length (seconds)</Label>
             <Input
-              id="emission-ad"
+              id="emission-seconds"
               type="number"
-              min={0}
-              max={1}
-              step={0.01}
+              min={1}
+              step={1}
+              disabled={loading}
               className="h-8 font-mono text-sm max-w-[140px]"
-              value={adRate}
-              onChange={(e) => setAdRate(parseFloat(e.target.value) || 0)}
+              value={windowSeconds}
+              onChange={(e) => setWindowSeconds(parseInt(e.target.value, 10) || 1)}
             />
           </div>
         </div>
-        <Button size="sm" variant="secondary" onClick={handleSave} disabled={saving}>
+        <p className="text-xs text-muted-foreground">
+          Currently:{" "}
+          <span className="font-mono text-foreground">
+            {nanoPerWindow} Nano every {windowSeconds}s
+          </span>
+          {windowSeconds > 0 && (
+            <>
+              {" "}
+              ({((nanoPerWindow / windowSeconds) * 60).toFixed(1)} Nano/minute)
+            </>
+          )}
+        </p>
+        <Button size="sm" variant="secondary" onClick={handleSave} disabled={saving || loading}>
           {saving ? "Saving…" : "Update emission rate"}
         </Button>
       </CardContent>

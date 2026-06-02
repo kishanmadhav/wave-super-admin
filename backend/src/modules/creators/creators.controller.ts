@@ -42,6 +42,18 @@ export class CreatorsController {
     return this.creatorsService.unverifyCreator(profileId, req.admin.id);
   }
 
+  @Post('artists/:artistId/verify')
+  @ApiOperation({ summary: 'Verify an individual artist (sets artists.verified = true)' })
+  verifyArtist(@Param('artistId') artistId: string, @Request() req: any) {
+    return this.creatorsService.verifyArtist(artistId, req.admin.id);
+  }
+
+  @Post('artists/:artistId/unverify')
+  @ApiOperation({ summary: 'Unverify an individual artist (sets artists.verified = false)' })
+  unverifyArtist(@Param('artistId') artistId: string, @Request() req: any) {
+    return this.creatorsService.unverifyArtist(artistId, req.admin.id);
+  }
+
   @Delete('artists/:artistId')
   @ApiOperation({ summary: 'Delete an artist record' })
   deleteArtist(@Param('artistId') artistId: string, @Request() req: any) {
