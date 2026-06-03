@@ -113,10 +113,52 @@ export default function SystemPage() {
     load()
   }
 
+  // Rename a taxonomy + cascade the new label into every reference
+  // (releases, tracks, mobile_users). Uses sa_taxonomy_rename RPC so
+  // the whole update is atomic — partial cascades are impossible.
+  async function renameTaxonomy(t: Taxonomy, newLabel: string) {
+    const trimmed = newLabel.trim()
+    if (!trimmed) { toast.error("Label cannot be empty"); return }
+    if (trimmed === t.label) return // no-op
+
+    const { data, error } = await supabase.rpc("sa_taxonomy_rename", {
+      p_id: t.id,
+      p_new_label: trimmed,
+    })
+    if (error) { toast.error(error.message); return }
+    const row = Array.isArray(data) && data.length ? data[0] : null
+    if (!row?.ok) {
+      toast.error(row?.reason || "Failed to rename")
+      return
+    }
+    // Tell the admin exactly what got cascaded so they know what changed.
+    const r = Number(row.releases_updated ?? 0)
+    const tr = Number(row.tracks_updated ?? 0)
+    const u = Number(row.users_updated ?? 0)
+    const parts: string[] = []
+    if (r > 0) parts.push(`${r} release${r === 1 ? "" : "s"}`)
+    if (tr > 0) parts.push(`${tr} track${tr === 1 ? "" : "s"}`)
+    if (u > 0) parts.push(`${u} user${u === 1 ? "" : "s"}`)
+    toast.success(
+      parts.length > 0
+        ? `Renamed to "${trimmed}" — updated ${parts.join(", ")}`
+        : `Renamed to "${trimmed}"`
+    )
+    load()
+  }
+
   async function deleteTaxonomy(t: Taxonomy) {
     if (!confirm(`Delete "${t.label}"? This cannot be undone.`)) return
-    const { error } = await supabase.from("sa_taxonomies").delete().eq("id", t.id)
-    if (error) { toast.error("Failed to delete"); return }
+    // Use the strict-delete RPC. It refuses if any release/track/user
+    // still references this taxonomy and returns counts so we can show
+    // the admin what's blocking the delete.
+    const { data, error } = await supabase.rpc("sa_taxonomy_delete", { p_id: t.id })
+    if (error) { toast.error(error.message); return }
+    const row = Array.isArray(data) && data.length ? data[0] : null
+    if (!row?.ok) {
+      toast.error(row?.reason || "Failed to delete")
+      return
+    }
     toast.success(`Deleted ${t.label}`)
     load()
   }
@@ -278,6 +320,16 @@ export default function SystemPage() {
                                     </span>
                                     {!genre.active && <span className="text-[10px] text-muted-foreground">(inactive)</span>}
                                     <button
+                                      onClick={() => {
+                                        const next = prompt(`Rename "${genre.label}" to:`, genre.label)
+                                        if (next !== null) renameTaxonomy(genre, next)
+                                      }}
+                                      className="opacity-0 group-hover:opacity-100 text-[10px] text-muted-foreground hover:text-foreground transition-opacity"
+                                      title="Rename genre"
+                                    >
+                                      ✎
+                                    </button>
+                                    <button
                                       onClick={() => toggleTaxonomy(genre)}
                                       className="opacity-0 group-hover:opacity-100 text-[10px] text-muted-foreground hover:text-foreground transition-opacity"
                                       title={genre.active ? "Deactivate" : "Activate"}
@@ -302,6 +354,16 @@ export default function SystemPage() {
                                       }`}
                                     >
                                       <span>{sg.label}</span>
+                                      <button
+                                        onClick={() => {
+                                          const next = prompt(`Rename "${sg.label}" to:`, sg.label)
+                                          if (next !== null) renameTaxonomy(sg, next)
+                                        }}
+                                        className="opacity-0 group-hover:opacity-100 text-[9px] text-muted-foreground hover:text-foreground transition-opacity"
+                                        title="Rename sub-genre"
+                                      >
+                                        ✎
+                                      </button>
                                       <button
                                         onClick={() => toggleTaxonomy(sg)}
                                         className="opacity-0 group-hover:opacity-100 text-[9px] text-muted-foreground hover:text-foreground transition-opacity"
@@ -411,8 +473,18 @@ export default function SystemPage() {
                               <span>{t.label}</span>
                               {!t.active && <span className="text-[10px] text-muted-foreground">(inactive)</span>}
                               <button
-                                onClick={() => toggleTaxonomy(t)}
+                                onClick={() => {
+                                  const next = prompt(`Rename "${t.label}" to:`, t.label)
+                                  if (next !== null) renameTaxonomy(t, next)
+                                }}
                                 className="ml-1 opacity-0 group-hover:opacity-100 text-[10px] text-muted-foreground hover:text-foreground transition-opacity"
+                                title="Rename"
+                              >
+                                ✎
+                              </button>
+                              <button
+                                onClick={() => toggleTaxonomy(t)}
+                                className="opacity-0 group-hover:opacity-100 text-[10px] text-muted-foreground hover:text-foreground transition-opacity"
                                 title={t.active ? "Deactivate" : "Activate"}
                               >
                                 {t.active ? "✕" : "✓"}
