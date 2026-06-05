@@ -14,6 +14,7 @@ import { WalletsModule } from './modules/wallets/wallets.module';
 import { SystemModule } from './modules/system/system.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AdsModule } from './modules/ads/ads.module';
+import { TribesModule } from './modules/tribes/tribes.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { AdsModule } from './modules/ads/ads.module';
     SystemModule,
     AuditModule,
     AdsModule,
+    TribesModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
