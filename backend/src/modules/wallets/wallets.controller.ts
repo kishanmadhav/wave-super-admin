@@ -56,6 +56,26 @@ export class WalletsController {
     return this.walletsService.getArtistWalletLedger(artistId, { limit, offset });
   }
 
+  @Get('labels')
+  @ApiOperation({ summary: 'Get label wallets (honors routed to labels)' })
+  getLabelWallets(
+    @Query('search') search?: string,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+  ) {
+    return this.walletsService.getLabelWallets({ search, limit, offset });
+  }
+
+  @Get('labels/:labelProfileId/ledger')
+  @ApiOperation({ summary: 'Get ledger entries for a label wallet' })
+  getLabelWalletLedger(
+    @Param('labelProfileId') labelProfileId: string,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+  ) {
+    return this.walletsService.getLabelWalletLedger(labelProfileId, { limit, offset });
+  }
+
   @Get('emission-rate')
   @ApiOperation({ summary: 'Get the listening-credit emission rate' })
   getEmissionRate() {

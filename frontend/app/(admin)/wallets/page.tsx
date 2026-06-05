@@ -41,6 +41,7 @@ interface PlatformSummary {
   totalNanoWaveIssued: number
   totalMiniWaveSpendable: number
   totalArtistNanoEarned: number
+  totalLabelNanoEarned: number
   totalHonorsVolume: number
   totalUsersWithBalances: number
 }
@@ -58,6 +59,14 @@ interface ArtistWalletRow {
   artistId: string
   artistName: string
   handle: string | null
+  nanoEarned: number
+  updatedAt: string
+}
+
+interface LabelWalletRow {
+  labelProfileId: string
+  labelName: string
+  legalEntityName: string | null
   nanoEarned: number
   updatedAt: string
 }
@@ -81,6 +90,7 @@ function SummaryCards({ summary, loading }: { summary: PlatformSummary | null; l
         { label: "Total NanoWave issued", value: formatNumber(summary.totalNanoWaveIssued), icon: Coins },
         { label: "Total MiniWave spendable", value: formatNumber(summary.totalMiniWaveSpendable), icon: Wallet },
         { label: "Artist NanoWave earned", value: formatNumber(summary.totalArtistNanoEarned), icon: Music },
+        { label: "Label NanoWave earned", value: formatNumber(summary.totalLabelNanoEarned), icon: Music },
         { label: "Total honors volume", value: formatNumber(summary.totalHonorsVolume), icon: Award },
         { label: "Users with balances", value: formatNumber(summary.totalUsersWithBalances), icon: Users },
         { label: "Eligible for on-chain settlement", value: "Yet to be added", icon: Zap },
@@ -455,7 +465,7 @@ function EmissionRateCard() {
 
 const PAGE_SIZE = 10
 
-type WalletView = "mobile" | "artist"
+type WalletView = "mobile" | "artist" | "label"
 
 export default function WalletsPage() {
   const [view, setView] = useState<WalletView>("mobile")
@@ -475,6 +485,12 @@ export default function WalletsPage() {
   const [artistWallets, setArtistWallets] = useState<ArtistWalletRow[]>([])
   const [artistTotal, setArtistTotal] = useState(0)
   const [artistLoading, setArtistLoading] = useState(false)
+
+  // Label wallets — populated when honor_artist routes a fan's honor to a
+  // catalog-only artist's label (artists.profile_id IS NULL + roster lookup).
+  const [labelWallets, setLabelWallets] = useState<LabelWalletRow[]>([])
+  const [labelTotal, setLabelTotal] = useState(0)
+  const [labelLoading, setLabelLoading] = useState(false)
 
   // Detail sheets
   const [selectedMobileUser, setSelectedMobileUser] = useState<MobileWalletRow | null>(null)
@@ -526,16 +542,36 @@ export default function WalletsPage() {
     setArtistLoading(false)
   }, [search])
 
+  // Load label wallets
+  const loadLabel = useCallback(async () => {
+    setLabelLoading(true)
+    try {
+      const res = await api.get<{ data: LabelWalletRow[]; total: number }>("/wallets/labels", {
+        search: search || undefined,
+        limit: 200,
+        offset: 0,
+      })
+      setLabelWallets(res.data ?? [])
+      setLabelTotal(res.total ?? 0)
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to load label wallets")
+    }
+    setLabelLoading(false)
+  }, [search])
+
   useEffect(() => {
     if (view === "mobile") loadMobile()
-    else loadArtist()
-  }, [view, loadMobile, loadArtist])
+    else if (view === "artist") loadArtist()
+    else loadLabel()
+  }, [view, loadMobile, loadArtist, loadLabel])
 
   // Pagination
-  const currentList = view === "mobile" ? mobileWallets : artistWallets
+  const currentList =
+    view === "mobile" ? mobileWallets : view === "artist" ? artistWallets : labelWallets
   const totalPages = Math.ceil(currentList.length / PAGE_SIZE)
   const pageItems = currentList.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
-  const loading = view === "mobile" ? mobileLoading : artistLoading
+  const loading =
+    view === "mobile" ? mobileLoading : view === "artist" ? artistLoading : labelLoading
 
   const openMobileDetail = (user: MobileWalletRow) => {
     setSelectedMobileUser(user)
@@ -560,7 +596,11 @@ export default function WalletsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="text-sm">
-                  {view === "mobile" ? "Mobile user wallets" : "Artist wallets"}
+                  {view === "mobile"
+                    ? "Mobile user wallets"
+                    : view === "artist"
+                      ? "Artist wallets"
+                      : "Label wallets"}
                 </CardTitle>
                 <CardDescription>Click a row to open wallet detail and ledger</CardDescription>
               </div>
@@ -571,6 +611,7 @@ export default function WalletsPage() {
                 <SelectContent>
                   <SelectItem value="mobile">Mobile users</SelectItem>
                   <SelectItem value="artist">Artists</SelectItem>
+                  <SelectItem value="label">Labels</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -581,7 +622,13 @@ export default function WalletsPage() {
               <div className="relative flex-1 min-w-[200px] max-w-xs">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
                 <Input
-                  placeholder={view === "mobile" ? "Search by name, email, user ID…" : "Search by name, handle, artist ID…"}
+                  placeholder={
+                    view === "mobile"
+                      ? "Search by name, email, user ID…"
+                      : view === "artist"
+                        ? "Search by name, handle, artist ID…"
+                        : "Search by label name or ID…"
+                  }
                   className="pl-8 h-8 text-sm"
                   value={search}
                   onChange={(e) => { setSearch(e.target.value); setPage(0) }}
@@ -591,7 +638,46 @@ export default function WalletsPage() {
 
             {/* Table */}
             <div className="overflow-x-auto rounded-md border border-border">
-              {view === "mobile" ? (
+              {view === "label" ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-border bg-secondary/30">
+                      <TableHead className="text-xs font-semibold text-muted-foreground">Label</TableHead>
+                      <TableHead className="text-xs font-semibold text-muted-foreground">Legal entity</TableHead>
+                      <TableHead className="text-xs font-semibold text-muted-foreground">Label ID</TableHead>
+                      <TableHead className="text-xs font-semibold text-muted-foreground text-right">Nano earned</TableHead>
+                      <TableHead className="text-xs font-semibold text-muted-foreground">Last updated</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {loading ? (
+                      Array.from({ length: 5 }).map((_, i) => (
+                        <TableRow key={i} className="border-border">
+                          {Array.from({ length: 5 }).map((_, j) => (
+                            <TableCell key={j}><div className="h-4 rounded bg-secondary animate-pulse" /></TableCell>
+                          ))}
+                        </TableRow>
+                      ))
+                    ) : (pageItems as LabelWalletRow[]).length === 0 ? (
+                      <TableRow className="border-border">
+                        <TableCell colSpan={5} className="text-center py-8 text-muted-foreground text-sm">
+                          No label wallets yet. Honors routed to labels (for catalog-only artists) will show up here.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      (pageItems as LabelWalletRow[]).map((l) => (
+                        <TableRow key={l.labelProfileId} className="border-border hover:bg-secondary/20">
+                          <TableCell className="text-xs font-medium">{l.labelName}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{l.legalEntityName || "—"}</TableCell>
+                          <TableCell className="text-xs font-mono text-muted-foreground max-w-[120px] truncate">{l.labelProfileId}</TableCell>
+                          <TableCell className="text-xs text-right font-mono">{formatNumber(l.nanoEarned)}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(l.updatedAt)}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              ) : view === "mobile" ? (
                 <Table>
                   <TableHeader>
                     <TableRow className="border-border bg-secondary/30">

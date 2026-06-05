@@ -34,6 +34,17 @@ export class WalletsService {
       totalArtistNano += Number(row.nano_earned ?? 0);
     }
 
+    // Aggregate stats from label_wallets (honors routed to labels for
+    // catalog-only artists).
+    const { data: labelAgg } = await client
+      .from('label_wallets')
+      .select('nano_earned');
+
+    let totalLabelNano = 0;
+    for (const row of labelAgg ?? []) {
+      totalLabelNano += Number(row.nano_earned ?? 0);
+    }
+
     // Count honor-related ledger entries
     const { count: honorsCount } = await client
       .from('mobile_wallet_ledger')
@@ -44,6 +55,7 @@ export class WalletsService {
       totalNanoWaveIssued: totalNanoIssued,
       totalMiniWaveSpendable: totalMiniBalance,
       totalArtistNanoEarned: totalArtistNano,
+      totalLabelNanoEarned: totalLabelNano,
       totalHonorsVolume: honorsCount ?? 0,
       totalUsersWithBalances: usersWithBalances,
     };
@@ -130,6 +142,59 @@ export class WalletsService {
       .from('mobile_wallet_ledger')
       .select('id,mobile_user_id,entry_type,source_type,source_reference_id,description,nano_delta,mini_delta,created_at', { count: 'exact' })
       .eq('mobile_user_id', userId)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+    if (error) throw error;
+    return { data: data ?? [], total: count ?? 0 };
+  }
+
+  async getLabelWallets(opts: { search?: string; limit?: number; offset?: number }) {
+    const { search, limit = 50, offset = 0 } = opts;
+    const client = this.supabase.getClient();
+
+    const { data, count, error } = await client
+      .from('label_wallets')
+      .select(
+        'label_profile_id,nano_earned,updated_at,label_profiles(label_name,legal_entity_name)',
+        { count: 'exact' },
+      )
+      .order('nano_earned', { ascending: false })
+      .range(offset, offset + limit - 1);
+    if (error) throw error;
+
+    let rows = (data ?? []).map((r: any) => ({
+      labelProfileId: r.label_profile_id,
+      labelName:
+        r.label_profiles?.label_name ||
+        r.label_profiles?.legal_entity_name ||
+        r.label_profile_id,
+      legalEntityName: r.label_profiles?.legal_entity_name || null,
+      nanoEarned: Number(r.nano_earned ?? 0),
+      updatedAt: r.updated_at,
+    }));
+
+    if (search) {
+      const q = search.toLowerCase();
+      rows = rows.filter(
+        (r) =>
+          r.labelName.toLowerCase().includes(q) ||
+          r.labelProfileId.toLowerCase().includes(q) ||
+          (r.legalEntityName && r.legalEntityName.toLowerCase().includes(q)),
+      );
+    }
+
+    return { data: rows, total: count ?? 0 };
+  }
+
+  async getLabelWalletLedger(labelProfileId: string, opts: { limit?: number; offset?: number }) {
+    const { limit = 50, offset = 0 } = opts;
+    const { data, count, error } = await this.supabase.getClient()
+      .from('label_wallet_ledger')
+      .select(
+        'id,label_profile_id,entry_type,source_type,source_reference_id,listener_user_id,routed_from_artist_id,description,nano_delta,created_at',
+        { count: 'exact' },
+      )
+      .eq('label_profile_id', labelProfileId)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
     if (error) throw error;
